@@ -1,0 +1,3071 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transit Overlay — Système de signalétique temps réel pour streams</title>
+<meta name="description" content="Overlay professionnel de signalétique train/bus pour streaming. Contrôle temps réel, dashboard, Stream Deck, mode Train (SNCF/DB/ÖBB/ČD) et Bus.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ═══════════════════════════════════════════════
+   RESET & TOKENS
+═══════════════════════════════════════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:            #050505;
+  --bg-2:          #0a0a0a;
+  --surface:       #14141b;
+  --surface-2:     #1a1a23;
+  --line:          rgba(255,255,255,0.1);
+  --line-2:        rgba(255,255,255,0.05);
+  --text:          #ffffff;
+  --text-2:        rgba(255,255,255,0.65);
+  --text-3:        rgba(255,255,255,0.4);
+  --text-4:        rgba(255,255,255,0.18);
+  --accent-train:  #ffffff;
+  --accent-bus:    #ffb84d;
+  --accent:        #ff4d1c;
+  --accent-2:      #ffb84d;
+  --accent-live:   #6fdb6f;
+  --accent-warn:   #ff3c3c;
+  --warm-tint:     rgba(255,184,77,0.04);
+
+  --font-logo:     'Archivo', Helvetica, Arial, sans-serif;
+  --font-display:  'Fraunces', Georgia, serif;
+  --font-body:     'Instrument Sans', system-ui, sans-serif;
+  --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+
+  --maxw: 1400px;
+  --pad-x: clamp(20px, 4vw, 64px);
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Layered ambient background */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 120% 50% at 50% 0%, rgba(255,184,77,0.04) 0%, transparent 40%),
+    radial-gradient(ellipse 80% 40% at 0% 30%, rgba(0,180,255,0.02) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 40% at 100% 70%, rgba(255,184,77,0.02) 0%, transparent 50%);
+}
+
+/* Grain texture overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+
+::selection { background: var(--accent-bus); color: var(--bg); }
+
+/* ═══════════════════════════════════════════════
+   PRELOADER VYZION — Reveal masqué
+═══════════════════════════════════════════════ */
+#preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+#preloader.done {
+  pointer-events: none;
+  animation: preloaderExit 1s cubic-bezier(.76,0,.24,1) forwards;
+}
+@keyframes preloaderExit {
+  0%   { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 100% 0); }
+}
+
+.pl-counter {
+  position: absolute;
+  bottom: 60px; right: 60px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  color: rgba(255,255,255,0.6);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.pl-counter .num {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: 80px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #fff;
+}
+.pl-counter .pct {
+  font-size: 24px;
+  color: rgba(255,255,255,0.5);
+}
+
+.pl-marker {
+  position: absolute;
+  bottom: 60px; left: 60px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+.pl-marker .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-right: 10px;
+  animation: plDot 1s ease-in-out infinite;
+}
+@keyframes plDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.3; transform: scale(0.7); }
+}
+
+.pl-brand {
+  font-family: var(--font-logo);
+  font-weight: 900;
+  font-size: clamp(60px, 14vw, 180px);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: #fff;
+  display: flex;
+  align-items: center;
+}
+.pl-brand .pl-z {
+  display: inline-block;
+  width: 0.78em;
+  height: 0.78em;
+  vertical-align: -0.04em;
+  margin: 0 -0.01em;
+  overflow: visible;
+}
+.pl-brand .pl-z svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.pl-brand > span {
+  display: inline-block;
+  overflow: hidden;
+}
+.pl-brand .reveal-letter {
+  display: inline-block;
+  transform: translateY(110%);
+  animation: plLetterRise 1s cubic-bezier(.65,.05,.36,1) forwards;
+}
+.pl-brand > span:nth-child(1) .reveal-letter { animation-delay: 0.3s; }
+.pl-brand > span:nth-child(2) .reveal-letter { animation-delay: 0.4s; }
+.pl-brand > span:nth-child(3) .reveal-letter { animation-delay: 0.5s; }
+.pl-brand > span:nth-child(4) .reveal-letter { animation-delay: 0.6s; }
+.pl-brand > span:nth-child(5) .reveal-letter { animation-delay: 0.7s; }
+.pl-brand > span:nth-child(6) .reveal-letter { animation-delay: 0.8s; }
+@keyframes plLetterRise {
+  0%   { transform: translateY(110%); }
+  100% { transform: translateY(0); }
+}
+
+@media (max-width: 700px) {
+  .pl-counter { bottom: 30px; right: 30px; }
+  .pl-counter .num { font-size: 48px; }
+  .pl-marker { bottom: 30px; left: 30px; font-size: 9px; }
+}
+
+body.intro-playing { overflow: hidden; }
+body.intro-done .hero-section > * { animation: heroIn .85s cubic-bezier(.3,.2,.2,1) both; }
+body.intro-done .hero-section > *:nth-child(1) { animation-delay: .1s; }
+body.intro-done .hero-section > *:nth-child(2) { animation-delay: .25s; }
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════
+   LOGO Z (motif hachuré pour usages petits)
+═══════════════════════════════════════════════ */
+.lv-z {
+  background-image: repeating-linear-gradient(-55deg, #fff 0px, #fff 2.5px, transparent 2.5px, transparent 7px);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 1.5px #fff;
+}
+
+/* ═══════════════════════════════════════════════
+   SIMULATION EXTENDED — phases supplémentaires
+═══════════════════════════════════════════════ */
+/* OFF state */
+.mo-off {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; min-height: 180px; padding: 30px 20px;
+  text-align: center;
+}
+.mo-off-icon {
+  font-size: 28px; color: rgba(255,68,68,0.55);
+  filter: drop-shadow(0 0 12px rgba(255,68,68,0.3));
+}
+.mo-off-label {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3em;
+  text-transform: uppercase; color: rgba(255,255,255,0.3);
+}
+
+/* BOOT state */
+.mo-boot {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; min-height: 180px; padding: 30px 20px;
+}
+.mo-boot-ring {
+  width: 36px; height: 36px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: moBootSpin .9s linear infinite;
+}
+@keyframes moBootSpin { to { transform: rotate(360deg); } }
+.mo-boot-label {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(255,255,255,0.6);
+}
+.mo-boot-step {
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.35);
+}
+
+/* PRÉ-DÉPART */
+.mo-predep {
+  padding: 14px 4px; display: flex; flex-direction: column; gap: 14px;
+}
+.mo-predep-route {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+}
+.mo-panel.bus .mo-predep-route {
+  background: rgba(255,184,77,0.04);
+  border-color: rgba(255,184,77,0.12);
+}
+.mo-predep-city { font-size: 13px; font-weight: 800; color: #fff; }
+.mo-predep-arrow { color: rgba(255,255,255,0.3); font-size: 12px; }
+.mo-panel.bus .mo-predep-arrow { color: rgba(255,184,77,0.45); }
+.mo-predep-wait {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 8px 0;
+}
+.mo-hourglass {
+  width: 20px; height: 28px; position: relative;
+  animation: moHgFlip 2.6s ease-in-out infinite;
+}
+.mo-hg-top, .mo-hg-bot {
+  position: absolute; left: 50%;
+  width: 0; height: 0;
+  transform: translateX(-50%);
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+}
+.mo-hg-top { top: 0; border-top: 12px solid rgba(255,255,255,0.22); }
+.mo-hg-bot { bottom: 0; border-bottom: 12px solid rgba(255,255,255,0.22); }
+.mo-panel.bus .mo-hg-top { border-top-color: rgba(255,184,77,0.3); }
+.mo-panel.bus .mo-hg-bot { border-bottom-color: rgba(255,184,77,0.3); }
+@keyframes moHgFlip {
+  0%,45% { transform: rotate(0deg); }
+  50%,95% { transform: rotate(180deg); }
+  100% { transform: rotate(180deg); }
+}
+.mo-predep-label {
+  font-family: var(--font-mono);
+  font-size: 8px; font-weight: 700; letter-spacing: 0.25em;
+  text-transform: uppercase; color: rgba(255,255,255,0.35);
+}
+.mo-panel.bus .mo-predep-label { color: rgba(255,184,77,0.55); }
+
+/* PAX EMBARQUEMENT */
+.mo-pax {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 14px 10px;
+}
+.mo-pax-station {
+  font-size: 14px; font-weight: 800; color: #fff;
+  text-align: center; letter-spacing: -0.2px;
+}
+.mo-pax-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+}
+.mo-pax-badge.boarding {
+  background: rgba(0,180,255,0.12); border: 1px solid rgba(0,180,255,0.35);
+  color: #00b4ff;
+}
+.mo-pax-badge.closing {
+  background: rgba(255,60,60,0.12); border: 1px solid rgba(255,60,60,0.4);
+  color: var(--accent-warn);
+}
+.mo-pax-badge.departing {
+  background: rgba(111,219,111,0.12); border: 1px solid rgba(111,219,111,0.35);
+  color: var(--accent-live);
+}
+.mo-pax-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor;
+  animation: moDotPulse 1s ease-in-out infinite;
+}
+@keyframes moDotPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.mo-pax-scene {
+  width: 100%; height: 50px;
+  position: relative;
+  background: linear-gradient(to bottom, transparent 78%, rgba(255,255,255,0.08) 78%, rgba(255,255,255,0.08) 80%, transparent 80%);
+}
+.mo-pax-person, .mo-pax-vehicle {
+  position: absolute; bottom: 10px;
+  font-size: 20px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+.mo-pax-vehicle { font-size: 26px; bottom: 6px; }
+
+/* Boarding: personne marche vers véhicule */
+.mo-pax.boarding .mo-pax-person {
+  left: 10%;
+  animation: moWalkToVehicle 2.4s cubic-bezier(.4,0,.6,1) infinite;
+}
+.mo-pax.boarding .mo-pax-vehicle { right: 10%; }
+@keyframes moWalkToVehicle {
+  0%   { left: 10%; opacity: 0; }
+  10%  { opacity: 1; }
+  70%  { left: 65%; opacity: 1; }
+  80%  { opacity: 0; }
+  100% { left: 10%; opacity: 0; }
+}
+
+/* Closing: portes qui se ferment */
+.mo-pax.closing .mo-pax-person { display: none; }
+.mo-pax.closing .mo-pax-vehicle {
+  left: 50%; transform: translateX(-50%);
+  animation: moClosingShake .25s ease-in-out infinite;
+}
+@keyframes moClosingShake {
+  0%,100% { transform: translateX(-50%); }
+  25%     { transform: translateX(-52%); }
+  75%     { transform: translateX(-48%); }
+}
+
+/* Departing: véhicule part */
+.mo-pax.departing .mo-pax-person { display: none; }
+.mo-pax.departing .mo-pax-vehicle {
+  animation: moDepart 2s cubic-bezier(.3,0,.7,.6) infinite;
+}
+@keyframes moDepart {
+  0%   { left: 20%; opacity: 0.7; }
+  100% { left: 110%; opacity: 0; }
+}
+
+/* FIN DE SERVICE */
+.mo-fin {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 28px 12px; text-align: center;
+}
+.mo-fin-terminus {
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 400; font-style: italic;
+  letter-spacing: 0.05em;
+  color: var(--accent-live);
+  text-shadow: 0 0 16px rgba(111,219,111,0.4);
+}
+.mo-fin-divider {
+  width: 40px; height: 1px;
+  background: rgba(111,219,111,0.4);
+}
+.mo-fin-label {
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.25em;
+  text-transform: uppercase; color: rgba(255,255,255,0.5);
+}
+.mo-fin-info {
+  font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Utility: hide all screens by default */
+.mo-screen { display: none; }
+.mo-screen.show { display: block; animation: moScreenIn .4s ease both; }
+.mo-screen.show.flex { display: flex; }
+@keyframes moScreenIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* POWER BUTTON big */
+.demo-power {
+  width: 100%;
+  padding: 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--accent-warn);
+  color: var(--accent-warn);
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all .3s;
+  margin-bottom: 14px;
+}
+.demo-power.on {
+  background: rgba(111,219,111,0.06);
+  color: var(--accent-live);
+  border-color: var(--accent-live);
+  box-shadow: 0 0 22px rgba(111,219,111,0.18);
+}
+.demo-power:disabled { opacity: 0.6; cursor: wait; }
+
+/* Phase indicator */
+.demo-phase {
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+}
+.demo-phase-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+  flex-shrink: 0;
+}
+.demo-phase-dot.live { background: var(--accent-live); box-shadow: 0 0 6px var(--accent-live); animation: pulse 1.5s ease-in-out infinite; }
+.demo-phase-dot.amber { background: var(--accent-bus); box-shadow: 0 0 6px var(--accent-bus); }
+.demo-phase-dot.blue { background: #00b4ff; box-shadow: 0 0 6px #00b4ff; animation: pulse 1.5s ease-in-out infinite; }
+.demo-phase-dot.red { background: var(--accent-warn); }
+.demo-phase .v { color: var(--text); font-weight: 600; }
+
+.demo-btn[disabled] { opacity: 0.3; cursor: not-allowed; }
+.demo-btn[disabled]:hover { background: var(--bg); border-color: var(--line-2); transform: none; }
+
+.demo-btn.green { border-color: rgba(111,219,111,0.25); color: var(--accent-live); }
+.demo-btn.green:hover:not([disabled]) { background: rgba(111,219,111,0.06); }
+.demo-btn.blue { border-color: rgba(0,180,255,0.25); color: #00b4ff; }
+.demo-btn.blue:hover:not([disabled]) { background: rgba(0,180,255,0.06); }
+
+/* ═══════════════════════════════════════════════
+   NAV — pill flottante Vyzion
+═══════════════════════════════════════════════ */
+.nav {
+  position: fixed;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15,15,15,0.7);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  padding: 6px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  opacity: 0;
+  animation: navIn 0.8s cubic-bezier(.4,.2,.2,1) 1.5s forwards;
+}
+@keyframes navIn {
+  from { opacity: 0; transform: translate(-50%, -20px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.nav-brand {
+  font-family: var(--font-logo);
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  padding: 8px 16px;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  color: #fff;
+}
+.nav-brand a { color: #fff; }
+.nav-brand .lv-z {
+  background-image: repeating-linear-gradient(-55deg, #fff 0px, #fff 1.2px, transparent 1.2px, transparent 4px);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 1px #fff;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.nav-links a {
+  padding: 8px 16px;
+  color: var(--text-3);
+  transition: color .2s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-time {
+  padding: 8px 16px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--text-2);
+  display: flex; align-items: center; gap: 8px;
+}
+.nav-time-dot {
+  width: 5px; height: 5px;
+  background: var(--accent-live);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--accent-live);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%     { opacity: 0.5; transform: scale(0.85); }
+}
+@media (max-width: 760px) {
+  .nav-links { display: none; }
+}
+
+/* ═══════════════════════════════════════════════
+   HERO
+═══════════════════════════════════════════════ */
+.hero {
+  padding: 140px var(--pad-x) 60px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  position: relative;
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 60px;
+  align-items: end;
+}
+@media (max-width: 960px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.eyebrow::before {
+  content: '';
+  width: 24px;
+  height: 1px;
+  background: var(--accent-bus);
+}
+.eyebrow .live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: rgba(111,219,111,0.08);
+  border: 1px solid rgba(111,219,111,0.25);
+  border-radius: 999px;
+  color: var(--accent-live);
+  margin-left: 6px;
+}
+.eyebrow .live-pill::before {
+  content: '';
+  width: 5px; height: 5px;
+  background: var(--accent-live);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--accent-live);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+h1.hero-title {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(48px, 8vw, 108px);
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  color: var(--text);
+  font-variation-settings: "opsz" 144, "SOFT" 30;
+  margin-bottom: 40px;
+}
+h1.hero-title em {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--accent-bus);
+  position: relative;
+}
+h1.hero-title em::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 8%;
+  bottom: 0.1em;
+  height: 0.05em;
+  background: rgba(255,184,77,0.2);
+}
+h1.hero-title .amp {
+  font-style: italic;
+  color: var(--text-3);
+  font-weight: 300;
+}
+
+.hero-lede {
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 540px;
+  margin-bottom: 40px;
+}
+
+.hero-ctas {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: transform .25s cubic-bezier(.4,.2,.2,1), background .25s;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transform: translateX(-100%);
+  transition: transform .6s;
+}
+.btn-primary:hover::before { transform: translateX(100%); }
+.btn-primary:hover { transform: translateY(-2px); background: var(--accent-bus); }
+.btn-primary svg { transition: transform .25s; }
+.btn-primary:hover svg { transform: translateX(3px); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 500;
+  font-size: 14px;
+  transition: border-color .2s, background .2s;
+}
+.btn-ghost:hover { border-color: var(--text); background: rgba(255,255,255,0.03); }
+
+/* Hero bottom marquee — train IDs */
+.hero-marquee {
+  margin-top: 80px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  position: relative;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+}
+.hero-marquee-track {
+  display: flex;
+  gap: 60px;
+  animation: marqueeScroll 60s linear infinite;
+  white-space: nowrap;
+  width: max-content;
+}
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.hero-marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-3);
+  letter-spacing: 0.05em;
+}
+.hero-marquee-item .code {
+  color: var(--text);
+  font-weight: 500;
+}
+.hero-marquee-item .dot {
+  width: 4px; height: 4px;
+  background: var(--accent-bus);
+  border-radius: 50%;
+  opacity: 0.5;
+}
+.hero-marquee-item .op {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+/* Scroll cue */
+.hero-scroll-cue {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  opacity: 0.7;
+  transition: opacity .2s;
+  pointer-events: none;
+}
+.hero-scroll-cue-line {
+  width: 1px;
+  height: 36px;
+  background: linear-gradient(180deg, transparent, var(--text-3), transparent);
+  position: relative;
+  overflow: hidden;
+}
+.hero-scroll-cue-line::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0; right: 0;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, var(--accent-bus));
+  animation: scrollCue 2s ease-in-out infinite;
+}
+@keyframes scrollCue {
+  0%   { top: -100%; }
+  100% { top: 100%; }
+}
+
+/* Fiche technique hero */
+.spec-sheet {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  position: relative;
+  box-shadow: 0 20px 60px -20px rgba(0,0,0,0.5);
+}
+.spec-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 30%);
+}
+.spec-header {
+  padding: 14px 18px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.spec-title {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spec-title::before {
+  content: '✦';
+  color: var(--accent-bus);
+  font-size: 12px;
+}
+.spec-status {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--accent-live);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spec-status::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--accent-live);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent-live);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.spec-rows { padding: 8px 0; }
+.spec-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 18px;
+  color: var(--text-2);
+  border-bottom: 1px dashed var(--line-2);
+  transition: background .2s;
+}
+.spec-row:hover { background: rgba(255,255,255,0.02); }
+.spec-row:last-child { border-bottom: none; }
+.spec-row .k { color: var(--text-3); }
+.spec-row .v { color: var(--text); font-weight: 500; }
+.spec-row .v.amber { color: var(--accent-bus); }
+
+/* Big marker number */
+.hero-marker {
+  position: absolute;
+  top: 120px;
+  right: calc(var(--pad-x) + 20px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-4);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+@media (max-width: 960px) { .hero-marker { display: none; } }
+
+/* ═══════════════════════════════════════════════
+   SECTION SCAFFOLDING
+═══════════════════════════════════════════════ */
+.section {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 120px var(--pad-x);
+  position: relative;
+}
+.section-header {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 60px;
+  margin-bottom: 80px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .section-header { grid-template-columns: 1fr; gap: 20px; margin-bottom: 50px; }
+}
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.section-label .num { color: var(--accent-bus); margin-right: 8px; }
+
+h2 {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(36px, 5.5vw, 68px);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  max-width: 800px;
+}
+h2 em {
+  font-style: italic;
+  color: var(--accent-bus);
+  font-weight: 300;
+}
+.section-intro {
+  font-size: 17px;
+  color: var(--text-2);
+  max-width: 560px;
+  margin-top: 20px;
+}
+
+/* ═══════════════════════════════════════════════
+   LIVE DEMO
+═══════════════════════════════════════════════ */
+.demo-wrap {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 40px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .demo-wrap { grid-template-columns: 1fr; }
+}
+
+/* Laptop / monitor frame */
+.monitor {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: #05050a;
+  border-radius: 14px 14px 4px 4px;
+  padding: 18px 14px 14px;
+  border: 1px solid var(--line);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 40px 80px -20px rgba(0,0,0,0.6),
+    0 10px 30px -10px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.monitor::before {
+  content: 'OBS — Browser Source  •  localhost:3000/overlay.html';
+  position: absolute;
+  top: 5px; left: 14px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-4);
+  letter-spacing: 0.1em;
+}
+.monitor-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at top left, rgba(0,180,255,0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(255,184,77,0.04) 0%, transparent 50%),
+    linear-gradient(180deg, #0d1720 0%, #060810 100%);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+/* Scan line shimmer */
+.monitor-screen::after {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(255,255,255,0.015) 3px,
+    rgba(255,255,255,0.015) 4px
+  );
+}
+
+/* Demo overlay container inside monitor */
+.demo-overlay-host {
+  position: absolute;
+  top: 20px; left: 20px;
+  width: min(380px, 70%);
+  font-family: 'Instrument Sans', sans-serif;
+}
+
+/* Control panel */
+.demo-controls {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+}
+.demo-controls h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+.demo-controls p.small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 22px;
+}
+.demo-mode-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  background: var(--bg);
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+}
+.demo-mode-tab {
+  flex: 1;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-radius: 7px;
+  transition: all .2s;
+}
+.demo-mode-tab.active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.demo-mode-tab.active.train { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15); }
+.demo-mode-tab.active.bus { box-shadow: inset 0 0 0 1px rgba(255,184,77,0.35); color: var(--accent-bus); }
+
+.demo-btn-group { display: flex; flex-direction: column; gap: 8px; }
+.demo-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all .15s;
+}
+.demo-btn:hover { border-color: var(--line); background: var(--surface-2); }
+.demo-btn:active { transform: scale(0.98); }
+.demo-btn .k {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-4);
+  background: rgba(255,255,255,0.04);
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+}
+.demo-btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.demo-btn.primary:hover { background: var(--accent-bus); border-color: var(--accent-bus); }
+.demo-btn.primary .k { color: var(--bg); background: rgba(0,0,0,0.1); border-color: transparent; }
+
+.demo-btn.amber { border-color: rgba(255,184,77,0.25); color: var(--accent-bus); }
+.demo-btn.amber:hover { background: rgba(255,184,77,0.08); }
+.demo-btn.red { border-color: rgba(255,60,60,0.2); color: var(--accent-warn); }
+.demo-btn.red:hover { background: rgba(255,60,60,0.06); }
+
+.demo-sep { height: 1px; background: var(--line-2); margin: 14px 0; }
+
+/* ═══════════════════════════════════════════════
+   MINI OVERLAY (démo intégrée)
+═══════════════════════════════════════════════ */
+.mo-panel {
+  position: relative;
+  background: rgba(8,8,14,0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 14px 16px;
+  transition: all .5s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+  color: #fff;
+}
+.mo-panel.bus {
+  background: rgba(14,10,6,0.92);
+  border-color: rgba(255,184,77,0.18);
+}
+.mo-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.mo-badge {
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  background: #c00;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+}
+.mo-panel.bus .mo-badge {
+  background: #009aa6;
+  font-size: 15px;
+  border-radius: 9px;
+}
+.mo-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+.mo-panel.bus .mo-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,184,77,0.8);
+}
+.mo-sub {
+  font-size: 9px;
+  color: rgba(255,255,255,0.4);
+  margin-top: 1px;
+}
+.mo-eta {
+  margin-left: auto;
+  text-align: right;
+}
+.mo-eta-lbl {
+  font-size: 7px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  font-weight: 700;
+}
+.mo-panel.bus .mo-eta-lbl { color: rgba(255,184,77,0.6); }
+.mo-eta-time {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+.mo-panel.bus .mo-eta-time { color: var(--accent-bus); }
+
+.mo-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 10px;
+}
+.mo-panel.bus .mo-route {
+  background: rgba(255,184,77,0.05);
+  border-color: rgba(255,184,77,0.12);
+}
+.mo-route-from { color: rgba(255,255,255,0.65); font-weight: 700; }
+.mo-route-arrow { color: rgba(255,255,255,0.25); }
+.mo-panel.bus .mo-route-arrow { color: rgba(255,184,77,0.45); }
+.mo-route-to { color: #fff; font-weight: 800; }
+
+.mo-stops-label {
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.28);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mo-panel.bus .mo-stops-label {
+  color: rgba(255,184,77,0.5);
+}
+.mo-panel.bus .mo-stops-label::before {
+  content: '';
+  width: 2px; height: 8px;
+  background: var(--accent-bus);
+  box-shadow: 0 0 4px rgba(255,184,77,0.6);
+  border-radius: 1px;
+}
+
+.mo-stops {
+  position: relative;
+  padding-left: 18px;
+}
+.mo-stops::before {
+  content: '';
+  position: absolute;
+  left: 5px; top: 4px; bottom: 4px;
+  width: 1.5px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+.mo-panel.bus .mo-stops::before {
+  background: linear-gradient(to bottom, rgba(255,184,77,0.2), rgba(255,184,77,0.06));
+}
+
+.mo-stop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+  position: relative;
+  transition: all .3s;
+}
+.mo-stop-dot {
+  position: absolute;
+  left: -16px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(255,255,255,0.12);
+}
+.mo-stop.passed .mo-stop-dot {
+  background: var(--accent-live);
+  border-color: var(--accent-live);
+  box-shadow: 0 0 5px rgba(111,219,111,0.3);
+}
+.mo-stop.current .mo-stop-dot {
+  width: 10px; height: 10px;
+  left: -17px;
+  background: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.15), 0 0 8px rgba(255,255,255,0.4);
+  animation: moCurrentPulse 1.8s ease-in-out infinite;
+}
+.mo-panel.bus .mo-stop.passed .mo-stop-dot {
+  background: var(--accent-bus);
+  border-color: var(--accent-bus);
+}
+.mo-panel.bus .mo-stop.current .mo-stop-dot {
+  background: var(--accent-bus);
+  border-color: var(--accent-bus);
+  box-shadow: 0 0 0 2px rgba(255,184,77,0.15), 0 0 10px rgba(255,184,77,0.6);
+}
+@keyframes moCurrentPulse {
+  0%,100% { transform: scale(1); }
+  50%     { transform: scale(1.15); }
+}
+.mo-stop-name {
+  font-size: 10px;
+  color: rgba(255,255,255,0.45);
+  font-weight: 500;
+}
+.mo-stop.passed .mo-stop-name { color: rgba(255,255,255,0.3); }
+.mo-stop.current .mo-stop-name { color: #fff; font-weight: 800; font-size: 11px; }
+.mo-panel.bus .mo-stop.current .mo-stop-name { color: #FFD980; }
+
+.mo-next {
+  margin-top: 10px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.mo-panel.bus .mo-next {
+  background: linear-gradient(90deg, rgba(255,184,77,0.1), rgba(255,184,77,0.03));
+  border-color: rgba(255,184,77,0.25);
+}
+.mo-next-lbl {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+}
+.mo-panel.bus .mo-next-lbl { color: var(--accent-bus); }
+.mo-next-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  margin-left: auto;
+}
+
+/* Transition pill */
+.mo-switch-pill {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  background: rgba(8,8,14,0.96);
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 18px;
+  padding: 16px 20px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+}
+.mo-switch-pill.show {
+  display: flex;
+  animation: moMsIn .3s cubic-bezier(.34,1.4,.64,1);
+}
+@keyframes moMsIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.mo-switch-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mo-switch-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.3));
+}
+.mo-switch-txt {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+}
+.mo-switch-bar {
+  height: 2px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.mo-switch-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(255,255,255,0.4), rgba(255,255,255,0.9));
+  border-radius: 1px;
+  transition: width 1.6s cubic-bezier(.4,0,.6,1);
+}
+
+/* ═══════════════════════════════════════════════
+   FEATURES GRID
+═══════════════════════════════════════════════ */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+@media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .features-grid { grid-template-columns: 1fr; } }
+
+.feature {
+  padding: 36px 30px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  transition: background .4s cubic-bezier(.4,.2,.2,1);
+  position: relative;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.feature::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent-bus);
+  transition: width .5s cubic-bezier(.4,.2,.2,1);
+}
+.feature:hover { background: var(--surface); }
+.feature:hover::before { width: 100%; }
+.feature:hover .feature-icon { color: var(--accent-bus); transform: scale(1.05) rotate(-3deg); }
+.feature-num {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--text-4);
+  margin-bottom: 24px;
+}
+.feature-icon {
+  width: 36px; height: 36px;
+  margin-bottom: 20px;
+  color: var(--accent-bus);
+  transition: transform .4s cubic-bezier(.34,1.4,.64,1), color .3s;
+}
+.feature h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.feature p {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.55;
+  margin-top: auto;
+}
+
+/* ═══════════════════════════════════════════════
+   DUAL MODE COMPARISON
+═══════════════════════════════════════════════ */
+.duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+@media (max-width: 860px) { .duo { grid-template-columns: 1fr; } }
+.duo-side {
+  padding: 40px 32px;
+  background: var(--bg);
+  position: relative;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+.duo-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.duo-label-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.duo-side.train .duo-label-dot { background: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
+.duo-side.bus .duo-label-dot { background: var(--accent-bus); box-shadow: 0 0 8px rgba(255,184,77,0.5); }
+
+.duo-title {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: 42px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 20px;
+}
+.duo-side.bus .duo-title { color: var(--accent-bus); font-style: italic; }
+
+.duo-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+.duo-op {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.duo-side.train .duo-op.hl { background: #c00; color: #fff; border-color: #c00; }
+.duo-side.bus .duo-op.hl { background: var(--accent-bus); color: #000; border-color: var(--accent-bus); }
+
+.duo-feats {
+  list-style: none;
+  margin-top: auto;
+}
+.duo-feats li {
+  padding: 10px 0;
+  font-size: 14px;
+  color: var(--text-2);
+  border-top: 1px dashed var(--line-2);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.duo-feats li:first-child { border-top: none; }
+.duo-feats li strong { color: var(--text); font-weight: 600; }
+
+/* ═══════════════════════════════════════════════
+   ARCHITECTURE
+═══════════════════════════════════════════════ */
+.arch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: start;
+}
+@media (max-width: 900px) { .arch { grid-template-columns: 1fr; } }
+
+.arch-diag {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 32px 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.arch-diag::before {
+  content: 'FIG. 01 — DATA FLOW';
+  position: absolute;
+  top: 12px; right: 14px;
+  font-size: 9px;
+  color: var(--text-4);
+  letter-spacing: 0.2em;
+}
+.arch-node {
+  padding: 14px 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 2;
+}
+.arch-node .nm {
+  font-weight: 600;
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+.arch-node .port {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.08em;
+}
+.arch-node.hl { border-color: var(--accent-bus); }
+.arch-node.hl .nm { color: var(--accent-bus); }
+
+.arch-arrow {
+  text-align: center;
+  color: var(--text-4);
+  font-size: 14px;
+  margin: 2px 0;
+  letter-spacing: 0.5em;
+  position: relative;
+  z-index: 1;
+}
+.arch-arrow .lbl {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--text-3);
+  margin-top: -2px;
+  margin-bottom: -2px;
+}
+
+.endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.endpoint {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: border-color .2s;
+}
+.endpoint:hover { border-color: var(--text-3); }
+.endpoint .method {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: center;
+  align-self: flex-start;
+  letter-spacing: 0.05em;
+}
+.endpoint .method.get { background: rgba(0,180,255,0.15); color: #00b4ff; }
+.endpoint .method.post { background: rgba(111,219,111,0.15); color: var(--accent-live); }
+.endpoint .method.del { background: rgba(255,60,60,0.15); color: var(--accent-warn); }
+.endpoint .path { color: var(--text); display: block; }
+.endpoint .desc { color: var(--text-3); font-size: 11px; font-family: var(--font-body); margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════
+   DOWNLOAD
+═══════════════════════════════════════════════ */
+.dl-section {
+  background: linear-gradient(180deg, transparent, var(--warm-tint));
+  position: relative;
+  padding-top: 80px;
+  padding-bottom: 160px;
+}
+
+.dl-hero {
+  text-align: center;
+  margin-bottom: 80px;
+}
+.dl-hero h2 {
+  max-width: 900px;
+  margin: 0 auto 24px;
+}
+.dl-hero p {
+  max-width: 560px;
+  margin: 0 auto;
+  color: var(--text-2);
+  font-size: 17px;
+}
+
+.dl-card {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.4);
+}
+.dl-top {
+  padding: 30px 36px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.dl-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dl-name .pkg {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  letter-spacing: 0.1em;
+}
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: transform .2s, background .2s;
+}
+.dl-btn:hover { transform: translateY(-2px); background: var(--accent-bus); }
+
+.dl-meta {
+  padding: 18px 36px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+@media (max-width: 660px) { .dl-meta { grid-template-columns: repeat(2, 1fr); } }
+.dl-meta-item { color: var(--text-3); }
+.dl-meta-item .v { display: block; color: var(--text); font-size: 13px; margin-top: 2px; font-weight: 500; }
+
+.dl-steps {
+  padding: 36px 36px 40px;
+}
+.dl-steps-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 24px;
+}
+.dl-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 18px;
+  padding-bottom: 28px;
+  margin-bottom: 28px;
+  border-bottom: 1px dashed var(--line-2);
+  position: relative;
+}
+.dl-step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.dl-step-num {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-bus);
+}
+.dl-step-body h4 {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.dl-step-body p {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+.dl-step-body pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  position: relative;
+}
+.dl-step-body pre .dollar { color: var(--text-4); margin-right: 8px; user-select: none; }
+.dl-step-body pre .comment { color: var(--text-4); }
+.dl-step-body pre .keyword { color: var(--accent-bus); }
+.dl-step-body pre .str { color: var(--accent-live); }
+
+.copy-btn {
+  position: absolute;
+  top: 10px; right: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text-3);
+  transition: all .2s;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--text-3); }
+.copy-btn.copied { color: var(--accent-live); border-color: var(--accent-live); }
+
+/* ═══════════════════════════════════════════════
+   STATS SECTION
+═══════════════════════════════════════════════ */
+.stats-band {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 60px var(--pad-x);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  background: linear-gradient(180deg, transparent, rgba(255,184,77,0.015), transparent);
+}
+@media (max-width: 860px) { .stats-band { grid-template-columns: repeat(2, 1fr); gap: 40px 0; } }
+.stat {
+  padding: 0 24px;
+  border-right: 1px solid var(--line-2);
+  text-align: left;
+}
+.stat:last-child { border-right: none; }
+@media (max-width: 860px) {
+  .stat:nth-child(2n) { border-right: none; }
+}
+.stat-num {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-variation-settings: "opsz" 144, "SOFT" 30;
+  font-size: clamp(48px, 5vw, 72px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--text);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.stat-num .unit {
+  font-size: 0.4em;
+  color: var(--accent-bus);
+  font-style: italic;
+}
+.stat-num.accent { color: var(--accent-bus); font-style: italic; }
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.stat-sub {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+/* ═══════════════════════════════════════════════
+   FOOTER (enriched)
+═══════════════════════════════════════════════ */
+.footer {
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg) 0%, #06060a 100%);
+  margin-top: 40px;
+}
+.footer-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 70px var(--pad-x) 50px;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: 50px;
+}
+@media (max-width: 900px) {
+  .footer-inner { grid-template-columns: 1fr 1fr; gap: 40px; }
+}
+@media (max-width: 560px) {
+  .footer-inner { grid-template-columns: 1fr; gap: 36px; }
+}
+
+.footer-brand {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.footer-brand-dot {
+  width: 10px; height: 10px;
+  background: var(--accent-live);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--accent-live);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+.footer-tagline {
+  color: var(--text-2);
+  font-size: 14px;
+  max-width: 320px;
+  margin-bottom: 22px;
+  line-height: 1.5;
+}
+.footer-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.footer-meta-item {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.footer-col-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.footer-col a {
+  font-size: 14px;
+  color: var(--text-2);
+  transition: color .2s, transform .2s;
+  display: inline-block;
+  width: fit-content;
+}
+.footer-col a:hover { color: var(--accent-bus); transform: translateX(3px); }
+
+.footer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.footer-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-2);
+  transition: all .2s;
+}
+.footer-tag:hover { border-color: var(--accent-bus); color: var(--accent-bus); }
+
+.footer-bottom {
+  border-top: 1px solid var(--line);
+  padding: 22px var(--pad-x);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.footer-bottom p {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.footer-bottom-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.footer-bottom-meta .t { color: var(--text); font-weight: 500; }
+.footer-clock-dot {
+  width: 3px; height: 3px;
+  background: var(--text-3);
+  border-radius: 50%;
+}
+
+/* ═══════════════════════════════════════════════
+   FADE-IN ON SCROLL
+═══════════════════════════════════════════════ */
+.fade-in {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity .8s ease, transform .8s cubic-bezier(.2,.8,.2,1);
+}
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+</style>
+</head>
+
+<!-- ═══════════════════ PRELOADER ═══════════════════ -->
+<div id="preloader">
+  <div class="pl-marker"><span class="dot"></span>VYZION · Loading</div>
+  <div class="pl-counter">
+    <span class="num" id="pl-num">0</span>
+    <span class="pct">%</span>
+  </div>
+  <h1 class="pl-brand" aria-label="VYZION">
+    <span><span class="reveal-letter">V</span></span>
+    <span><span class="reveal-letter">Y</span></span>
+    <span class="pl-z"><span class="reveal-letter">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Z" preserveAspectRatio="xMidYMid meet">
+        <path d="M 8 8 L 92 8 L 92 22 L 30 92 L 14 92 L 76 22 L 8 22 Z" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="miter"/>
+        <path d="M 92 92 L 8 92 L 8 78 L 70 8 L 86 8 L 24 78 L 92 78 Z" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="miter"/>
+      </svg>
+    </span></span>
+    <span><span class="reveal-letter">I</span></span>
+    <span><span class="reveal-letter">O</span></span>
+    <span><span class="reveal-letter">N</span></span>
+  </h1>
+</div>
+
+<!-- ═══════════════════ NAV ═══════════════════ -->
+<nav class="nav">
+  <div class="nav-brand">
+    <a href="index.html" style="display: inline-flex; align-items: center; gap: 8px;">
+      VY<span class="lv-z">Z</span>ION
+    </a>
+  </div>
+  <div class="nav-links">
+    <a href="#demo">Démo</a>
+    <a href="#features">Fonctionnalités</a>
+    <a href="#modes">Modes</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#download">Télécharger</a>
+  </div>
+  <div class="nav-time">
+    <span class="nav-time-dot"></span>
+    <span id="nav-time">--:--</span>
+  </div>
+</nav>
+
+
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<section class="hero">
+  <div class="hero-marker">FIG. 00 / REV. 1.2</div>
+  <div class="hero-grid">
+    <div>
+      <div class="eyebrow">
+        Overlay · OBS · Temps réel
+        <span class="live-pill">LIVE</span>
+      </div>
+      <h1 class="hero-title">
+        Signalétique<br>
+        <em>temps réel</em><br>
+        pour vos streams<br>
+        <span class="amp">ferroviaires.</span>
+      </h1>
+      <p class="hero-lede">
+        Un overlay professionnel de simulation train et bus pour OBS. Contrôle dashboard, Stream Deck, WebSocket, modes multi-opérateurs — pensé pour les créateurs sérieux.
+      </p>
+      <div class="hero-ctas">
+        <a href="#download" class="btn-primary">
+          Télécharger le bundle
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+        <a href="#demo" class="btn-ghost">Voir la démo live</a>
+      </div>
+    </div>
+
+    <div class="spec-sheet">
+      <div class="spec-header">
+        <span class="spec-title">Fiche technique</span>
+        <span class="spec-status">Live</span>
+      </div>
+      <div class="spec-rows">
+        <div class="spec-row"><span class="k">Version</span><span class="v">1.2.0</span></div>
+        <div class="spec-row"><span class="k">Runtime</span><span class="v">Node.js ≥ 18</span></div>
+        <div class="spec-row"><span class="k">Taille</span><span class="v">< 250 Ko</span></div>
+        <div class="spec-row"><span class="k">Dépendances</span><span class="v">ws</span></div>
+        <div class="spec-row"><span class="k">Protocole</span><span class="v">WS + REST</span></div>
+        <div class="spec-row"><span class="k">Modes</span><span class="v amber">Train · Bus</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Marquee de train IDs -->
+  <div class="hero-marquee">
+    <div class="hero-marquee-track">
+      <span class="hero-marquee-item"><span class="op">SNCF</span> <span class="code">TGV 6201</span> <span>Paris → Marseille</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">DB</span> <span class="code">ICE 372</span> <span>München → Frankfurt</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">RATP</span> <span class="code">Ligne 95</span> <span>Montparnasse → Pte Montmartre</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">ÖBB</span> <span class="code">RJ 165</span> <span>Wien → Budapest</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">SNCF</span> <span class="code">TER 854112</span> <span>Lyon → Saint-Étienne</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">ČD</span> <span class="code">EC 173</span> <span>Praha → Wien</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">Keolis</span> <span class="code">L42</span> <span>Bordeaux Centre</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">FlixBus</span> <span class="code">N612</span> <span>Lille → Bruxelles</span><span class="dot"></span></span>
+      <!-- Duplicate for seamless loop -->
+      <span class="hero-marquee-item"><span class="op">SNCF</span> <span class="code">TGV 6201</span> <span>Paris → Marseille</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">DB</span> <span class="code">ICE 372</span> <span>München → Frankfurt</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">RATP</span> <span class="code">Ligne 95</span> <span>Montparnasse → Pte Montmartre</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">ÖBB</span> <span class="code">RJ 165</span> <span>Wien → Budapest</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">SNCF</span> <span class="code">TER 854112</span> <span>Lyon → Saint-Étienne</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">ČD</span> <span class="code">EC 173</span> <span>Praha → Wien</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">Keolis</span> <span class="code">L42</span> <span>Bordeaux Centre</span><span class="dot"></span></span>
+      <span class="hero-marquee-item"><span class="op">FlixBus</span> <span class="code">N612</span> <span>Lille → Bruxelles</span><span class="dot"></span></span>
+    </div>
+  </div>
+
+  <div class="hero-scroll-cue">
+    <span>Scroller</span>
+    <div class="hero-scroll-cue-line"></div>
+  </div>
+</section>
+
+<!-- ═══════════════════ LIVE DEMO ═══════════════════ -->
+<section class="section" id="demo">
+  <div class="section-header fade-in">
+    <div class="section-label"><span class="num">01</span>Démonstration</div>
+    <div>
+      <h2>Essayez-le <em>comme si</em> vous l'aviez déjà installé.</h2>
+      <p class="section-intro">
+        Voici l'overlay, en direct, avec les mêmes contrôles que votre dashboard. Basculez entre train et bus, avancez dans les arrêts, lancez l'embarquement — tout réagit en temps réel.
+      </p>
+    </div>
+  </div>
+
+  <div class="demo-wrap fade-in">
+    <div class="monitor">
+      <div class="monitor-screen">
+        <!-- MINI OVERLAY -->
+        <div class="demo-overlay-host">
+          <div class="mo-panel" id="mo-panel">
+
+            <!-- OFF screen -->
+            <div class="mo-screen flex" id="mo-scr-off">
+              <div class="mo-off">
+                <div class="mo-off-icon">⏻</div>
+                <div class="mo-off-label">Overlay éteint</div>
+              </div>
+            </div>
+
+            <!-- BOOT screen -->
+            <div class="mo-screen" id="mo-scr-boot">
+              <div class="mo-boot">
+                <div class="mo-boot-ring"></div>
+                <div class="mo-boot-label">Démarrage</div>
+                <div class="mo-boot-step" id="mo-boot-step">Initialisation...</div>
+              </div>
+            </div>
+
+            <!-- PRE-DÉPART screen -->
+            <div class="mo-screen" id="mo-scr-predep">
+              <div class="mo-predep">
+                <div class="mo-header">
+                  <div class="mo-badge" id="mo-predep-badge">TGV</div>
+                  <div style="min-width:0;flex:1;">
+                    <div class="mo-title" id="mo-predep-line">TGV 6201</div>
+                    <div class="mo-sub" id="mo-predep-op">SNCF</div>
+                  </div>
+                </div>
+                <div class="mo-predep-route">
+                  <span class="mo-predep-city" id="mo-predep-from">Paris</span>
+                  <span class="mo-predep-arrow">→</span>
+                  <span class="mo-predep-city" id="mo-predep-to">Marseille</span>
+                </div>
+                <div class="mo-predep-wait">
+                  <div class="mo-hourglass">
+                    <div class="mo-hg-top"></div>
+                    <div class="mo-hg-bot"></div>
+                  </div>
+                  <div class="mo-predep-label">En attente du départ</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PAX screen -->
+            <div class="mo-screen" id="mo-scr-pax">
+              <div class="mo-pax" id="mo-pax-state">
+                <div class="mo-pax-badge boarding" id="mo-pax-badge">
+                  <span class="mo-pax-dot"></span>
+                  <span id="mo-pax-badge-txt">Embarquement</span>
+                </div>
+                <div class="mo-pax-station" id="mo-pax-station">Paris Gare de Lyon</div>
+                <div class="mo-pax-scene">
+                  <span class="mo-pax-person">🚶</span>
+                  <span class="mo-pax-vehicle" id="mo-pax-vehicle">🚆</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- VOYAGE screen (contenu original) -->
+            <div class="mo-screen show" id="mo-scr-voyage">
+              <div class="mo-header">
+                <div class="mo-badge" id="mo-badge">TGV</div>
+                <div style="min-width:0;flex:1;">
+                  <div class="mo-title" id="mo-title">TGV 6201</div>
+                  <div class="mo-sub" id="mo-sub">SNCF</div>
+                </div>
+                <div class="mo-eta">
+                  <div class="mo-eta-lbl" id="mo-eta-lbl">Arrivée</div>
+                  <div class="mo-eta-time" id="mo-eta-time">14h32</div>
+                </div>
+              </div>
+              <div class="mo-route">
+                <span class="mo-route-from" id="mo-from">Paris</span>
+                <span class="mo-route-arrow">→</span>
+                <span class="mo-route-to" id="mo-to">Marseille</span>
+              </div>
+              <div class="mo-stops-label" id="mo-stops-label">Arrêts</div>
+              <div class="mo-stops" id="mo-stops"></div>
+              <div class="mo-next" id="mo-next">
+                <span class="mo-next-lbl" id="mo-next-lbl">Prochain arrêt</span>
+                <span class="mo-next-name" id="mo-next-name">—</span>
+              </div>
+            </div>
+
+            <!-- FIN DE SERVICE screen -->
+            <div class="mo-screen" id="mo-scr-fin">
+              <div class="mo-fin">
+                <div class="mo-fin-label">Terminus</div>
+                <div class="mo-fin-terminus" id="mo-fin-terminus">Marseille</div>
+                <div class="mo-fin-divider"></div>
+                <div class="mo-fin-info">Fin de service</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Switch anim pill -->
+          <div class="mo-switch-pill" id="mo-switch-pill">
+            <div class="mo-switch-head">
+              <span class="mo-switch-icon" id="mo-switch-icon">🚌</span>
+              <span class="mo-switch-txt" id="mo-switch-txt">Passage en mode Bus</span>
+            </div>
+            <div class="mo-switch-bar"><div class="mo-switch-fill" id="mo-switch-fill"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTROL PANEL -->
+    <div class="demo-controls">
+      <h3>Panel de contrôle</h3>
+      <p class="small">Simulation dashboard</p>
+
+      <button class="demo-power" id="demo-power-btn" onclick="demoTogglePower()">
+        <span>⏻</span>
+        <span id="demo-power-txt">Overlay OFF</span>
+      </button>
+
+      <div class="demo-phase">
+        <span class="demo-phase-dot" id="demo-phase-dot"></span>
+        <span>Phase ·</span>
+        <span class="v" id="demo-phase-txt">Éteint</span>
+      </div>
+
+      <div class="demo-mode-tabs">
+        <button class="demo-mode-tab active train" onclick="demoSwitch('train')" id="demo-tab-train">🚂 Train</button>
+        <button class="demo-mode-tab bus" onclick="demoSwitch('bus')" id="demo-tab-bus">🚌 Bus</button>
+      </div>
+
+      <div class="demo-btn-group">
+        <button class="demo-btn blue" onclick="demoPAX()" id="demo-btn-pax">
+          <span>👥 Embarquement PAX</span>
+          <span class="k">P</span>
+        </button>
+        <button class="demo-btn green" onclick="demoDepart()" id="demo-btn-depart">
+          <span>▶ Lancer le départ</span>
+          <span class="k">D</span>
+        </button>
+
+        <div class="demo-sep"></div>
+
+        <button class="demo-btn primary" onclick="demoNext()" id="demo-btn-next">
+          <span>Arrêt suivant →</span>
+          <span class="k">→</span>
+        </button>
+        <button class="demo-btn" onclick="demoPrev()" id="demo-btn-prev">
+          <span>← Arrêt précédent</span>
+          <span class="k">←</span>
+        </button>
+
+        <div class="demo-sep"></div>
+
+        <button class="demo-btn red" onclick="demoFin()" id="demo-btn-fin">
+          <span>■ Fin de service</span>
+          <span class="k">F</span>
+        </button>
+        <button class="demo-btn amber" onclick="demoReset()">
+          <span>↻ Réinitialiser</span>
+          <span class="k">R</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FEATURES ═══════════════════ -->
+<section class="section" id="features">
+  <div class="section-header fade-in">
+    <div class="section-label"><span class="num">02</span>Fonctionnalités</div>
+    <div>
+      <h2>Pensé pour <em>tenir</em><br>un stream en direct.</h2>
+      <p class="section-intro">
+        Chaque détail a été travaillé pour un usage réel : les latences, la synchronisation, les contrôles rapides au Stream Deck, la robustesse aux coupures.
+      </p>
+    </div>
+  </div>
+
+  <div class="features-grid fade-in">
+    <div class="feature">
+      <div class="feature-num">N°01</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="16" cy="16" r="3"/>
+        <path d="M11 11a7 7 0 0 1 10 0M7 7a13 13 0 0 1 18 0M11 21a7 7 0 0 0 10 0M7 25a13 13 0 0 0 18 0" stroke-linecap="round"/>
+      </svg>
+      <h3>WebSocket temps réel</h3>
+      <p>Synchronisation instantanée entre dashboard, overlay et Stream Deck. Zéro latence perceptible entre un clic et le rendu à l'écran.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-num">N°02</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="6" y="10" width="20" height="14" rx="2"/>
+        <path d="M10 10V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3M12 16h8M12 20h5" stroke-linecap="round"/>
+      </svg>
+      <h3>Stream Deck ready</h3>
+      <p>API REST minimaliste : une URL par action. Mappez <code style="font-family:var(--font-mono);font-size:11px;">/api/next</code>, <code style="font-family:var(--font-mono);font-size:11px;">/api/pax</code> à vos boutons physiques.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-num">N°03</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="4" y="8" width="24" height="16" rx="2"/>
+        <path d="M4 13h24M9 18h3M15 18h3" stroke-linecap="round"/>
+      </svg>
+      <h3>Multi-opérateurs</h3>
+      <p>SNCF, Deutsche Bahn, ÖBB, ČD en mode train. RATP, Keolis, Transdev, FlixBus en mode bus. Chaque opérateur avec ses couleurs officielles.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-num">N°04</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M4 8h24M4 16h24M4 24h24M12 4v24M20 4v24" stroke-linecap="round"/>
+      </svg>
+      <h3>Presets persistants</h3>
+      <p>Sauvegardez vos lignes favorites — arrêts, opérateurs, horaires. Stockage serveur qui survit aux redémarrages, chargement en un clic.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-num">N°05</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="16" cy="16" r="12"/>
+        <path d="M16 8v8l5 3" stroke-linecap="round"/>
+      </svg>
+      <h3>Scénarios complets</h3>
+      <p>Pré-départ avec sablier, embarquement PAX, voyage, fin de service, veille no-service. Chaque état a son animation dédiée.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-num">N°06</div>
+      <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="6" y="4" width="20" height="24" rx="2"/>
+        <path d="M11 10h10M11 14h6M11 18h10M11 22h4" stroke-linecap="round"/>
+      </svg>
+      <h3>Glassmorphism raffiné</h3>
+      <p>Backdrop-filter natif, effets de brillance subtils, typographie précise. Un rendu qui élève la qualité visuelle de votre stream.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ DUAL MODE ═══════════════════ -->
+<section class="section" id="modes">
+  <div class="section-header fade-in">
+    <div class="section-label"><span class="num">03</span>Modes</div>
+    <div>
+      <h2>Deux univers,<br>une <em>même</em> grammaire.</h2>
+      <p class="section-intro">
+        Train et bus partagent la même logique — opérateur, ligne, arrêts, états — mais chacun a son identité visuelle propre. Basculez en une animation fluide.
+      </p>
+    </div>
+  </div>
+
+  <div class="duo fade-in">
+    <div class="duo-side train">
+      <div class="duo-label"><span class="duo-label-dot"></span>Mode Train</div>
+      <div class="duo-title">Grande ligne.</div>
+      <div class="duo-ops">
+        <span class="duo-op hl">SNCF</span>
+        <span class="duo-op">DB</span>
+        <span class="duo-op">ÖBB</span>
+        <span class="duo-op">ČD</span>
+      </div>
+      <ul class="duo-feats">
+        <li><span>Identité</span><strong>Sobre · blanche</strong></li>
+        <li><span>Accent</span><strong>Monochrome</strong></li>
+        <li><span>Tempo</span><strong>Contemplatif</strong></li>
+        <li><span>Usage</span><strong>TGV, ICE, Railjet</strong></li>
+      </ul>
+    </div>
+
+    <div class="duo-side bus">
+      <div class="duo-label"><span class="duo-label-dot"></span>Mode Bus</div>
+      <div class="duo-title">Urbain.</div>
+      <div class="duo-ops">
+        <span class="duo-op hl">RATP</span>
+        <span class="duo-op">Keolis</span>
+        <span class="duo-op">Transdev</span>
+        <span class="duo-op">FlixBus</span>
+        <span class="duo-op">STIB</span>
+        <span class="duo-op">TEC</span>
+      </div>
+      <ul class="duo-feats">
+        <li><span>Identité</span><strong>Ambre · signalétique</strong></li>
+        <li><span>Accent</span><strong>Jaune urbain</strong></li>
+        <li><span>Tempo</span><strong>Rythmé</strong></li>
+        <li><span>Usage</span><strong>Lignes urbaines, autocars</strong></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ ARCHITECTURE ═══════════════════ -->
+<section class="section" id="architecture">
+  <div class="section-header fade-in">
+    <div class="section-label"><span class="num">04</span>Architecture</div>
+    <div>
+      <h2>Trois pièces,<br>zéro friction.</h2>
+      <p class="section-intro">
+        Un serveur Node.js léger au centre, un dashboard pour piloter, un overlay pour afficher. Tout communique par WebSocket — plus API REST pour les déclencheurs Stream Deck.
+      </p>
+    </div>
+  </div>
+
+  <div class="arch fade-in">
+    <div class="arch-diag">
+      <div class="arch-node">
+        <span class="nm">Dashboard</span>
+        <span class="port">:3000 · navigateur</span>
+      </div>
+      <div class="arch-arrow">↕<span class="lbl">WebSocket + REST</span>↕</div>
+      <div class="arch-node hl">
+        <span class="nm">Server.js</span>
+        <span class="port">Node.js · port 3000</span>
+      </div>
+      <div class="arch-arrow">↕<span class="lbl">WebSocket push</span>↕</div>
+      <div class="arch-node">
+        <span class="nm">Overlay (OBS)</span>
+        <span class="port">Browser Source 520×VH</span>
+      </div>
+      <div class="arch-arrow">↕<span class="lbl">REST bypass (optionnel)</span>↕</div>
+      <div class="arch-node">
+        <span class="nm">Stream Deck</span>
+        <span class="port">HTTP GET · 1 URL / bouton</span>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.2em; color: var(--text-3); margin-bottom: 14px;">
+        API DISPONIBLE
+      </div>
+      <div class="endpoints">
+        <div class="endpoint">
+          <span class="method get">GET</span>
+          <div>
+            <span class="path">/api/state</span>
+            <span class="desc">État complet de l'overlay</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method post">POST</span>
+          <div>
+            <span class="path">/api/state</span>
+            <span class="desc">Mise à jour du state (dashboard)</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method post">POST</span>
+          <div>
+            <span class="path">/api/power</span>
+            <span class="desc">Allumer / éteindre l'overlay</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method get">GET</span>
+          <div>
+            <span class="path">/api/next · /api/prev</span>
+            <span class="desc">Navigation entre arrêts (Stream Deck)</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method get">GET</span>
+          <div>
+            <span class="path">/api/depart · /api/pax · /api/fin</span>
+            <span class="desc">Déclencheurs d'état</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method get">GET</span>
+          <div>
+            <span class="path">/api/presets</span>
+            <span class="desc">Liste des presets bus sauvegardés</span>
+          </div>
+        </div>
+        <div class="endpoint">
+          <span class="method del">DEL</span>
+          <div>
+            <span class="path">/api/presets/:index</span>
+            <span class="desc">Supprimer un preset</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ DOWNLOAD ═══════════════════ -->
+<section class="section dl-section" id="download">
+  <div class="dl-hero fade-in">
+    <div class="section-label" style="display: inline-block; padding-top: 0; border-top: none; margin-bottom: 16px;">
+      <span class="num">05</span>Téléchargement
+    </div>
+    <h2>Installation en <em>4 minutes</em>.</h2>
+    <p>Clonez, installez, lancez. Ajoutez l'overlay comme Browser Source dans OBS. C'est tout.</p>
+  </div>
+
+  <div class="dl-card fade-in">
+    <div class="dl-top">
+      <div class="dl-name">
+        transit-overlay
+        <span class="pkg">v1.2.0</span>
+      </div>
+      <a href="#" class="dl-btn" onclick="return downloadBundle(event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3v14m0 0l-5-5m5 5l5-5M5 21h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Télécharger le ZIP
+      </a>
+    </div>
+    <div class="dl-meta">
+      <div class="dl-meta-item">TAILLE<span class="v">~240 Ko</span></div>
+      <div class="dl-meta-item">NODE<span class="v">≥ 18.0</span></div>
+      <div class="dl-meta-item">LICENCE<span class="v">MIT</span></div>
+      <div class="dl-meta-item">PLATEFORMES<span class="v">win · macos · linux</span></div>
+    </div>
+
+    <div class="dl-steps">
+      <div class="dl-steps-title">Mise en route</div>
+
+      <div class="dl-step">
+        <div class="dl-step-num">1</div>
+        <div class="dl-step-body">
+          <h4>Installer les dépendances</h4>
+          <p>Depuis le dossier décompressé, installez le module WebSocket.</p>
+          <pre><button class="copy-btn" data-cmd="npm install ws">COPY</button><span class="dollar">$</span><span class="keyword">npm</span> install ws</pre>
+        </div>
+      </div>
+
+      <div class="dl-step">
+        <div class="dl-step-num">2</div>
+        <div class="dl-step-body">
+          <h4>Lancer le serveur</h4>
+          <p>Le serveur tourne sur <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent-bus);">localhost:3000</code>. Laissez-le ouvert pendant votre stream.</p>
+          <pre><button class="copy-btn" data-cmd="node server.js">COPY</button><span class="dollar">$</span><span class="keyword">node</span> server.js</pre>
+        </div>
+      </div>
+
+      <div class="dl-step">
+        <div class="dl-step-num">3</div>
+        <div class="dl-step-body">
+          <h4>Ajouter la source OBS</h4>
+          <p>Dans OBS Studio : <strong>Sources → Ajouter → Navigateur (Browser)</strong>. URL :</p>
+          <pre><button class="copy-btn" data-cmd="http://localhost:3000/overlay.html">COPY</button><span class="str">http://localhost:3000/overlay.html</span></pre>
+          <p style="margin-top: 10px;">Largeur : <strong>520</strong> · Hauteur : <strong>720</strong> (ou plus selon votre layout)</p>
+        </div>
+      </div>
+
+      <div class="dl-step">
+        <div class="dl-step-num">4</div>
+        <div class="dl-step-body">
+          <h4>Piloter depuis le dashboard</h4>
+          <p>Ouvrez <code style="font-family:var(--font-mono);font-size:12px;color:var(--accent-bus);">localhost:3000</code> dans votre navigateur pour accéder au dashboard de contrôle. Vous pouvez aussi mapper les URLs REST sur votre Stream Deck.</p>
+          <pre><span class="comment"># Exemple Stream Deck — Arrêt suivant</span>
+<span class="str">http://localhost:3000/api/next</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ STATS BAND ═══════════════════ -->
+<section class="stats-band fade-in">
+  <div class="stat">
+    <div class="stat-num">< <span class="unit">5</span></div>
+    <div class="stat-label">Latence</div>
+    <div class="stat-sub">Millisecondes entre clic et rendu à l'écran via WebSocket.</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">10<span class="unit">+</span></div>
+    <div class="stat-label">Opérateurs</div>
+    <div class="stat-sub">SNCF, DB, ÖBB, ČD, RATP, Keolis, FlixBus et bien plus.</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">240<span class="unit">Ko</span></div>
+    <div class="stat-label">Bundle</div>
+    <div class="stat-sub">Léger, sans dépendances superflues. Démarrage instantané.</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num accent">∞</div>
+    <div class="stat-label">Presets</div>
+    <div class="stat-sub">Sauvegardez vos lignes favorites — persistants côté serveur.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand-col">
+      <div class="footer-brand">
+        <span class="footer-brand-dot"></span>
+        Transit<span style="color: var(--text-3); font-style: italic;">Overlay</span>
+      </div>
+      <p class="footer-tagline">Signalétique temps réel pour les créateurs ferroviaires.</p>
+      <div class="footer-meta">
+        <div class="footer-meta-item">v1.2.0 · MIT</div>
+        <div class="footer-meta-item">Build 2026.04</div>
+      </div>
+    </div>
+
+    <div class="footer-col">
+      <div class="footer-col-title">Navigation</div>
+      <a href="#demo">Démonstration</a>
+      <a href="#features">Fonctionnalités</a>
+      <a href="#modes">Modes</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#download">Télécharger</a>
+    </div>
+
+    <div class="footer-col">
+      <div class="footer-col-title">Ressources</div>
+      <a href="#">Documentation</a>
+      <a href="#">API Reference</a>
+      <a href="#">Changelog</a>
+      <a href="#">Stream Deck setup</a>
+    </div>
+
+    <div class="footer-col">
+      <div class="footer-col-title">Compatible avec</div>
+      <div class="footer-tags">
+        <span class="footer-tag">OBS Studio</span>
+        <span class="footer-tag">Streamlabs</span>
+        <span class="footer-tag">Stream Deck</span>
+        <span class="footer-tag">Touch Portal</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <p>© 2026 TransitOverlay · Conçu pour les créateurs ferroviaires</p>
+    <div class="footer-bottom-meta">
+      <span>Status · <span style="color: var(--accent-live);">All systems operational</span></span>
+      <span class="footer-clock-dot"></span>
+      <span class="t" id="footer-time">--:--:--</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  PRELOADER VYZION
+// ══════════════════════════════════════════════════════════
+const plNum = document.getElementById('pl-num');
+const preloader = document.getElementById('preloader');
+const totalDuration = 2000;
+const startTime = performance.now();
+
+function updateLoader(now) {
+  const elapsed = now - startTime;
+  const pct = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+  if (plNum) plNum.textContent = pct;
+  if (pct < 100) {
+    requestAnimationFrame(updateLoader);
+  } else {
+    setTimeout(() => {
+      if (preloader) preloader.classList.add('done');
+      document.body.classList.remove('intro-playing');
+      document.body.classList.add('intro-done');
+      document.body.style.overflow = '';
+      setTimeout(() => { if (preloader) preloader.style.display = 'none'; }, 1100);
+    }, 200);
+  }
+}
+document.body.style.overflow = 'hidden';
+requestAnimationFrame(updateLoader);
+
+// ESC to skip
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && preloader && !preloader.classList.contains('done')) {
+    preloader.classList.add('done');
+    document.body.classList.remove('intro-playing');
+    document.body.classList.add('intro-done');
+    document.body.style.overflow = '';
+    if (plNum) plNum.textContent = 100;
+    setTimeout(() => { if (preloader) preloader.style.display = 'none'; }, 1100);
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+//  LIVE CLOCK (nav)
+// ══════════════════════════════════════════════════════════
+function tickNavClock() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const tEl = document.getElementById('nav-time');
+  const fEl = document.getElementById('footer-time');
+  if (tEl) tEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (fEl) fEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} CET`;
+}
+setInterval(tickNavClock, 1000);
+tickNavClock();
+
+// ══════════════════════════════════════════════════════════
+//  SIMULATION — états et données
+// ══════════════════════════════════════════════════════════
+
+const DEMO_DATA = {
+  train: {
+    operator: 'SNCF',
+    line: 'TGV 6201',
+    lineShort: 'TGV',
+    subLabel: 'SNCF',
+    from: 'Paris',
+    to: 'Marseille',
+    eta: '14h32',
+    etaLabel: 'Arrivée',
+    stopsLabel: 'Arrêts',
+    nextLabel: 'Prochain arrêt',
+    badgeBg: '#c00',
+    badgeFg: '#fff',
+    vehicleEmoji: '🚆',
+    stops: ['Paris', 'Lyon', 'Valence', 'Avignon', 'Aix', 'Marseille'],
+    current: 2
+  },
+  bus: {
+    operator: 'RATP',
+    line: 'Ligne 95',
+    lineShort: '95',
+    subLabel: 'Montparnasse → Porte de Montmartre',
+    from: 'Montparnasse',
+    to: 'P. Montmartre',
+    eta: 'Terminus',
+    etaLabel: 'Terminus',
+    stopsLabel: 'Arrêts',
+    nextLabel: 'Prochain arrêt',
+    badgeBg: '#009aa6',
+    badgeFg: '#fff',
+    vehicleEmoji: '🚌',
+    stops: ['Montparnasse', 'St-Placide', 'Sèvres-Babylone', 'Palais-Royal', 'Opéra', 'Trinité', 'Pigalle', 'P. Montmartre'],
+    current: 3
+  }
+};
+
+let demoState = JSON.parse(JSON.stringify(DEMO_DATA));
+let demoMode = 'train';
+let demoPhase = 'off'; // off | boot | predep | voyage | pax | fin
+let demoPowered = false;
+let demoSwitchLock = false;
+let demoPAXState = null; // null | 'boarding' | 'closing' | 'departing'
+
+const PHASE_META = {
+  off:     { label: 'Éteint',       dotClass: ''      },
+  boot:    { label: 'Démarrage',    dotClass: 'blue'  },
+  predep:  { label: 'Pré-départ',   dotClass: 'amber' },
+  voyage:  { label: 'En voyage',    dotClass: 'live'  },
+  pax:     { label: 'Embarquement', dotClass: 'blue'  },
+  fin:     { label: 'Fin service',  dotClass: 'red'   },
+};
+
+function showScreen(name) {
+  ['off','boot','predep','pax','voyage','fin'].forEach(s => {
+    const el = document.getElementById('mo-scr-' + s);
+    if (el) {
+      el.classList.remove('show');
+      if (s === name) el.classList.add('show');
+    }
+  });
+}
+
+function updatePhaseIndicator() {
+  const meta = PHASE_META[demoPhase] || PHASE_META.off;
+  const dot = document.getElementById('demo-phase-dot');
+  dot.classList.remove('live','amber','blue','red');
+  if (meta.dotClass) dot.classList.add(meta.dotClass);
+  document.getElementById('demo-phase-txt').textContent = meta.label;
+
+  // Button enable/disable based on phase and power
+  const enabled = demoPowered && (demoPhase === 'voyage' || demoPhase === 'predep' || demoPhase === 'pax');
+  const enabledVoyage = demoPowered && demoPhase === 'voyage';
+  document.getElementById('demo-btn-next').disabled = !enabledVoyage;
+  document.getElementById('demo-btn-prev').disabled = !enabledVoyage;
+  document.getElementById('demo-btn-pax').disabled  = !demoPowered || demoPhase === 'off' || demoPhase === 'boot' || demoPhase === 'fin';
+  document.getElementById('demo-btn-depart').disabled = !demoPowered || (demoPhase !== 'predep' && demoPhase !== 'pax');
+  document.getElementById('demo-btn-fin').disabled = !demoPowered || demoPhase === 'off' || demoPhase === 'boot' || demoPhase === 'fin';
+
+  // Mode tabs: only usable when powered
+  document.getElementById('demo-tab-train').disabled = !demoPowered;
+  document.getElementById('demo-tab-bus').disabled = !demoPowered;
+}
+
+function renderVoyage() {
+  const d = demoState[demoMode];
+  const panel = document.getElementById('mo-panel');
+  panel.classList.toggle('bus', demoMode === 'bus');
+
+  const badge = document.getElementById('mo-badge');
+  badge.textContent = d.lineShort;
+  badge.style.background = d.badgeBg;
+  badge.style.color = d.badgeFg;
+
+  document.getElementById('mo-title').textContent   = d.line;
+  document.getElementById('mo-sub').textContent     = d.subLabel;
+  document.getElementById('mo-from').textContent    = d.from;
+  document.getElementById('mo-to').textContent      = d.to;
+  document.getElementById('mo-eta-time').textContent = d.eta;
+  document.getElementById('mo-eta-lbl').textContent = d.etaLabel;
+  document.getElementById('mo-stops-label').textContent = d.stopsLabel;
+  document.getElementById('mo-next-lbl').textContent = d.nextLabel;
+
+  const stopsEl = document.getElementById('mo-stops');
+  stopsEl.innerHTML = '';
+  d.stops.forEach((name, i) => {
+    const el = document.createElement('div');
+    el.className = 'mo-stop';
+    if (i < d.current) el.classList.add('passed');
+    else if (i === d.current) el.classList.add('current');
+    else el.classList.add('upcoming');
+    el.innerHTML = `<div class="mo-stop-dot"></div><span class="mo-stop-name">${name}</span>`;
+    stopsEl.appendChild(el);
+  });
+
+  const nextName = d.current + 1 < d.stops.length ? d.stops[d.current + 1] : '— Terminus —';
+  document.getElementById('mo-next-name').textContent = nextName;
+}
+
+function renderPredep() {
+  const d = demoState[demoMode];
+  const panel = document.getElementById('mo-panel');
+  panel.classList.toggle('bus', demoMode === 'bus');
+
+  const badge = document.getElementById('mo-predep-badge');
+  badge.textContent = d.lineShort;
+  badge.style.background = d.badgeBg;
+  badge.style.color = d.badgeFg;
+
+  document.getElementById('mo-predep-line').textContent = d.line;
+  document.getElementById('mo-predep-op').textContent = d.subLabel;
+  document.getElementById('mo-predep-from').textContent = d.from;
+  document.getElementById('mo-predep-to').textContent = d.to;
+}
+
+function renderPAX() {
+  const d = demoState[demoMode];
+  const panel = document.getElementById('mo-panel');
+  panel.classList.toggle('bus', demoMode === 'bus');
+
+  const stationName = d.stops[d.current] || d.from;
+  document.getElementById('mo-pax-station').textContent = stationName;
+  document.getElementById('mo-pax-vehicle').textContent = d.vehicleEmoji;
+
+  const paxEl = document.getElementById('mo-pax-state');
+  paxEl.classList.remove('boarding','closing','departing');
+  paxEl.classList.add(demoPAXState || 'boarding');
+
+  const badge = document.getElementById('mo-pax-badge');
+  badge.classList.remove('boarding','closing','departing');
+  badge.classList.add(demoPAXState || 'boarding');
+
+  const txt = { boarding: 'Embarquement', closing: 'Fermeture des portes', departing: 'Départ imminent' };
+  document.getElementById('mo-pax-badge-txt').textContent = txt[demoPAXState || 'boarding'];
+}
+
+function renderFin() {
+  const d = demoState[demoMode];
+  document.getElementById('mo-fin-terminus').textContent = d.to;
+}
+
+function renderAll() {
+  const panel = document.getElementById('mo-panel');
+  panel.classList.toggle('bus', demoMode === 'bus');
+
+  if (demoPhase === 'off')    showScreen('off');
+  if (demoPhase === 'boot')   showScreen('boot');
+  if (demoPhase === 'predep') { renderPredep(); showScreen('predep'); }
+  if (demoPhase === 'voyage') { renderVoyage(); showScreen('voyage'); }
+  if (demoPhase === 'pax')    { renderPAX();    showScreen('pax'); }
+  if (demoPhase === 'fin')    { renderFin();    showScreen('fin'); }
+
+  updatePhaseIndicator();
+}
+
+// ══════════════════════════════════════════════════════════
+//  ACTIONS
+// ══════════════════════════════════════════════════════════
+
+function demoTogglePower() {
+  const btn = document.getElementById('demo-power-btn');
+  const txt = document.getElementById('demo-power-txt');
+
+  if (!demoPowered) {
+    // Power ON — sequence boot → predep
+    demoPowered = true;
+    btn.classList.add('on');
+    btn.disabled = true;
+    txt.textContent = 'Démarrage...';
+    demoPhase = 'boot';
+    renderAll();
+
+    // Boot steps
+    const steps = ['Initialisation...', 'Connexion...', 'Lancement...'];
+    let i = 0;
+    const bootStepEl = document.getElementById('mo-boot-step');
+    bootStepEl.textContent = steps[0];
+    const stepTimer = setInterval(() => {
+      i++;
+      if (i < steps.length) bootStepEl.textContent = steps[i];
+      else clearInterval(stepTimer);
+    }, 800);
+
+    setTimeout(() => {
+      clearInterval(stepTimer);
+      btn.disabled = false;
+      txt.textContent = 'Overlay ON';
+      demoPhase = 'predep';
+      renderAll();
+    }, 2400);
+  } else {
+    // Power OFF
+    demoPowered = false;
+    btn.classList.remove('on');
+    txt.textContent = 'Overlay OFF';
+    demoPhase = 'off';
+    demoPAXState = null;
+    renderAll();
+  }
+}
+
+function demoNext() {
+  if (!demoPowered || demoPhase !== 'voyage') return;
+  const d = demoState[demoMode];
+  if (d.current < d.stops.length - 1) {
+    d.current++;
+    renderAll();
+  }
+}
+
+function demoPrev() {
+  if (!demoPowered || demoPhase !== 'voyage') return;
+  const d = demoState[demoMode];
+  if (d.current > 0) {
+    d.current--;
+    renderAll();
+  }
+}
+
+function demoPAX() {
+  if (!demoPowered) return;
+  // Cycle: null → boarding → closing → departing → voyage
+  if (demoPhase !== 'pax') {
+    demoPhase = 'pax';
+    demoPAXState = 'boarding';
+  } else {
+    if (demoPAXState === 'boarding')      demoPAXState = 'closing';
+    else if (demoPAXState === 'closing')  demoPAXState = 'departing';
+    else if (demoPAXState === 'departing') {
+      // Retour au voyage
+      demoPhase = 'voyage';
+      demoPAXState = null;
+    }
+  }
+  renderAll();
+}
+
+function demoDepart() {
+  if (!demoPowered) return;
+  if (demoPhase !== 'predep' && demoPhase !== 'pax') return;
+  demoPhase = 'voyage';
+  demoPAXState = null;
+  renderAll();
+}
+
+function demoFin() {
+  if (!demoPowered) return;
+  demoPhase = 'fin';
+  demoPAXState = null;
+  renderAll();
+}
+
+function demoReset() {
+  demoState = JSON.parse(JSON.stringify(DEMO_DATA));
+  demoPAXState = null;
+  if (demoPowered) {
+    demoPhase = 'predep';
+  }
+  renderAll();
+}
+
+function demoSwitch(mode) {
+  if (!demoPowered || demoSwitchLock || mode === demoMode) return;
+  demoSwitchLock = true;
+
+  document.getElementById('demo-tab-train').classList.toggle('active', mode === 'train');
+  document.getElementById('demo-tab-bus').classList.toggle('active', mode === 'bus');
+
+  const pill = document.getElementById('mo-switch-pill');
+  const icon = document.getElementById('mo-switch-icon');
+  const txt  = document.getElementById('mo-switch-txt');
+  const fill = document.getElementById('mo-switch-fill');
+
+  icon.textContent = mode === 'bus' ? '🚌' : '🚂';
+  txt.textContent  = mode === 'bus' ? 'Passage en mode Bus' : 'Passage en mode Train';
+  fill.style.transition = 'none';
+  fill.style.width = '0%';
+
+  pill.classList.add('show');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    fill.style.transition = 'width 1.4s cubic-bezier(.4,0,.6,1)';
+    fill.style.width = '100%';
+  }));
+
+  setTimeout(() => {
+    demoMode = mode;
+    renderAll();
+  }, 700);
+
+  setTimeout(() => {
+    pill.classList.remove('show');
+    demoSwitchLock = false;
+  }, 1800);
+}
+
+// ══════════════════════════════════════════════════════════
+//  COPY BUTTONS
+// ══════════════════════════════════════════════════════════
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const cmd = btn.dataset.cmd || btn.parentElement.textContent.replace(/COPY|\$/g, '').trim();
+    try {
+      await navigator.clipboard.writeText(cmd);
+      btn.classList.add('copied');
+      const orig = btn.textContent;
+      btn.textContent = 'COPIED ✓';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.textContent = orig;
+      }, 1500);
+    } catch(e) { console.warn(e); }
+  });
+});
+
+// ══════════════════════════════════════════════════════════
+//  DOWNLOAD
+// ══════════════════════════════════════════════════════════
+function downloadBundle(e) {
+  e.preventDefault();
+  alert("Placez ici le lien vers votre ZIP ou votre dépôt.\n\nExemple :\n  github.com/votre-user/transit-overlay/releases\n\nSources attendues :\n  · server.js\n  · dashboard.html\n  · overlay.html\n  · package.json (pour 'ws')");
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════
+//  FADE-IN ON SCROLL
+// ══════════════════════════════════════════════════════════
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      obs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.fade-in').forEach(el => obs.observe(el));
+
+// ══════════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════════
+renderAll();
+</script>
+
+</body>
+</html>
