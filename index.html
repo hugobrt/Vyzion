@@ -1008,9 +1008,28 @@ body::after {
   transition: opacity .9s ease, transform .9s cubic-bezier(.2,.8,.2,1);
 }
 .reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ═══════════════════════════════════════════════
+   PAGE TRANSITION SLIDE
+═══════════════════════════════════════════════ */
+#page-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  pointer-events: none;
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 0.7s cubic-bezier(.76,0,.24,1);
+}
+#page-fade.active {
+  clip-path: inset(0 0 0 0);
+  pointer-events: auto;
+}
 </style>
 </head>
 <body>
+
+<div id="page-fade"></div>
 
 <!-- ═══════════ PRELOADER ═══════════ -->
 <div id="preloader">
@@ -1027,7 +1046,6 @@ body::after {
   <div class="nav-links">
     <a href="#projects">Projets</a>
     <a href="#about">Studio</a>
-    <a href="showcase.html">Transit</a>
   </div>
   <div class="nav-time">
     <span class="nav-time-dot"></span>
@@ -1279,66 +1297,18 @@ const obs = new IntersectionObserver((entries) => {
 }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
 document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
 
-// ═══════════ Transition preloader vers le projet ═══════════
-document.querySelectorAll('a.featured-card').forEach(card => {
+// ═══════════ Fade-to-black avant redirection ═══════════
+document.querySelectorAll('a.featured-card, a.bubble').forEach(card => {
   card.addEventListener('click', e => {
     const href = card.getAttribute('href');
     if (!href || href.startsWith('#') || href.startsWith('http')) return;
     e.preventDefault();
 
-    const pre = document.getElementById('preloader');
-    if (!pre) { window.location.href = href; return; }
+    const fade = document.getElementById('page-fade');
+    if (!fade) { window.location.href = href; return; }
 
-    pre.style.display = 'flex';
-    pre.classList.remove('done');
-    pre.style.animation = 'preloaderEnter 0.8s cubic-bezier(.76,0,.24,1) forwards';
-
-    const num = document.getElementById('pl-num');
-    if (num) num.textContent = '0';
-
-    const start = performance.now();
-    const total = 1500;
-    function transitionTick(now) {
-      const elapsed = now - start;
-      const pct = Math.min(100, Math.round((elapsed / total) * 100));
-      if (num) num.textContent = pct;
-      if (pct < 100) requestAnimationFrame(transitionTick);
-      else setTimeout(() => { window.location.href = href; }, 250);
-    }
-    requestAnimationFrame(transitionTick);
-  });
-});
-
-// ═══════════ Click on Featured project → preloader transition ═══════════
-document.querySelectorAll('a.featured-card, a.bubble').forEach(card => {
-  card.addEventListener('click', e => {
-    const href = card.getAttribute('href');
-    if (!href || href.startsWith('#')) return;
-    e.preventDefault();
-
-    // Replay preloader avec animation inverse (cover)
-    const pre = document.getElementById('preloader');
-    if (pre) {
-      pre.style.display = 'flex';
-      pre.classList.remove('done');
-      pre.style.animation = 'preloaderEnter 0.7s cubic-bezier(.76,0,.24,1) forwards';
-      // Reset counter
-      const num = document.getElementById('pl-num');
-      if (num) num.textContent = '0';
-      // Run a quick countdown then navigate
-      const start = performance.now();
-      const total = 1400;
-      function tick(now) {
-        const elapsed = now - start;
-        const pct = Math.min(100, Math.round((elapsed / total) * 100));
-        if (num) num.textContent = pct;
-        if (pct < 100) requestAnimationFrame(tick);
-        else setTimeout(() => { window.location.href = href; }, 200);
-      }
-      requestAnimationFrame(tick);
-    } else {
-      window.location.href = href;
-    }
+    fade.classList.add('active');
+    setTimeout(() => { window.location.href = href; }, 700);
   });
 });
 </script>

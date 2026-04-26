@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VYZION — Téléchargement</title>
+<meta name="description" content="Téléchargez Transit Overlay par Vyzion.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:           #050505;
+  --bg-2:         #0a0a0a;
+  --text:         #ffffff;
+  --text-2:       rgba(255,255,255,0.65);
+  --text-3:       rgba(255,255,255,0.4);
+  --text-4:       rgba(255,255,255,0.18);
+  --line:         rgba(255,255,255,0.1);
+  --line-2:       rgba(255,255,255,0.05);
+  --accent:       #ff4d1c;
+  --accent-2:     #ffb84d;
+  --font-logo:    'Archivo', Helvetica, Arial, sans-serif;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body:    'Instrument Sans', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+  --maxw: 1400px;
+  --pad-x: clamp(20px, 4vw, 64px);
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font-body);
+  font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; min-height: 100vh; position: relative;
+}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+::selection { background: var(--accent); color: #fff; }
+
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999; opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+/* ═══ INTRO OVERLAY ═══ */
+#intro {
+  position: fixed; inset: 0; z-index: 9000; background: var(--bg);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  pointer-events: none;
+}
+#intro.show { display: flex; }
+#intro.exit { animation: introExit 0.5s cubic-bezier(.76,0,.24,1) forwards; }
+@keyframes introExit {
+  0%   { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 100% 0); }
+}
+
+.intro-logo {
+  font-family: var(--font-logo); font-weight: 900;
+  font-size: clamp(80px, 16vw, 200px); letter-spacing: -0.04em; line-height: 1;
+  color: #fff;
+  opacity: 0; transform: translateY(20px);
+  animation: introUp 0.38s cubic-bezier(.25,.1,.25,1) 0.05s forwards;
+}
+.intro-logo .iz {
+  background-image: repeating-linear-gradient(-55deg, #fff 0px, #fff 2.5px, transparent 2.5px, transparent 7px);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-stroke: 2px #fff;
+}
+.intro-tagline {
+  font-family: var(--font-display); font-weight: 300; font-style: italic;
+  font-size: clamp(16px, 2.5vw, 28px); letter-spacing: -0.01em; color: var(--text-3);
+  opacity: 0; transform: translateY(12px);
+  animation: introUp 0.32s cubic-bezier(.25,.1,.25,1) 0.26s forwards;
+}
+@keyframes introUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ NAV ═══ */
+.nav {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 100;
+  display: inline-flex; align-items: center;
+  background: rgba(15,15,15,0.7);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 6px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  opacity: 0; animation: navIn 0.7s cubic-bezier(.4,.2,.2,1) 3.8s forwards;
+}
+@keyframes navIn {
+  from { opacity: 0; transform: translate(-50%,-16px); }
+  to   { opacity: 1; transform: translate(-50%,0); }
+}
+.nav-brand {
+  font-family: var(--font-logo); font-weight: 900; font-size: 14px;
+  letter-spacing: -0.02em; padding: 8px 16px;
+  border-right: 1px solid rgba(255,255,255,0.08); color: #fff;
+}
+.nav-brand .nz {
+  background-image: repeating-linear-gradient(-55deg, #fff 0px, #fff 1.2px, transparent 1.2px, transparent 4px);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-stroke: 1px #fff;
+}
+.nav-links { display: flex; align-items: center; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+.nav-links a { padding: 8px 16px; color: var(--text-3); transition: color .2s; }
+.nav-links a:hover { color: var(--text); }
+.nav-time {
+  padding: 8px 16px; border-left: 1px solid rgba(255,255,255,0.08);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px;
+}
+.nav-time-dot { width: 5px; height: 5px; background: #6fdb6f; border-radius: 50%; box-shadow: 0 0 6px #6fdb6f; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+@media (max-width:760px) { .nav-links { display: none; } }
+
+/* ═══ REVEAL ═══ */
+.reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.75s cubic-bezier(.25,.1,.25,1), transform 0.75s cubic-bezier(.25,.1,.25,1); }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ═══ MAIN ═══ */
+main { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x); }
+
+/* ═══ HERO ═══ */
+.dl-hero {
+  min-height: 100vh; display: flex; flex-direction: column;
+  justify-content: center; padding-top: 120px; padding-bottom: 80px;
+  position: relative; border-bottom: 1px solid var(--line);
+}
+.dl-hero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 60% 50% at 70% 50%, rgba(255,77,28,0.06) 0%, transparent 70%),
+              radial-gradient(ellipse 40% 60% at 10% 80%, rgba(255,184,77,0.03) 0%, transparent 60%);
+}
+.dl-eyebrow {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.3em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 48px;
+  display: flex; align-items: center; gap: 20px;
+}
+.dl-eyebrow::after { content: ''; flex: 1; max-width: 80px; height: 1px; background: var(--line); }
+
+.dl-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+@media (max-width:900px) { .dl-hero-grid { grid-template-columns: 1fr; gap: 48px; } }
+
+.dl-title {
+  font-family: var(--font-display); font-weight: 300;
+  font-size: clamp(52px, 7vw, 108px); line-height: 0.92;
+  letter-spacing: -0.03em; margin-bottom: 32px;
+}
+.dl-title em { font-style: italic; color: var(--text-2); }
+.dl-title .accent-word { color: var(--accent); }
+
+.dl-desc { font-size: 17px; line-height: 1.65; color: var(--text-2); max-width: 460px; margin-bottom: 48px; }
+
+.dl-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 48px; }
+.dl-meta-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px; font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-3);
+}
+.dl-meta-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-2); }
+
+.dl-btn-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+
+.dl-btn {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 14px;
+  background: var(--accent); color: #fff;
+  font-family: var(--font-logo); font-weight: 700; font-size: 14px;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 18px 32px; border-radius: 999px; cursor: pointer; border: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.dl-btn:hover { transform: translateY(-2px); box-shadow: 0 16px 48px rgba(255,77,28,0.35); }
+.dl-btn:active { transform: translateY(0); }
+.dl-btn::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+.dl-btn-icon { width: 20px; height: 20px; transition: transform 0.2s; flex-shrink: 0; }
+.dl-btn:hover .dl-btn-icon { transform: translateY(3px); }
+
+.dl-size-note { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-4); }
+.dl-size-note strong { color: var(--text-3); }
+
+/* File card */
+.dl-card {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.dl-card-header {
+  padding: 20px 24px; border-bottom: 1px solid var(--line-2);
+  display: flex; align-items: center; gap: 12px;
+}
+.dl-card-dots { display: flex; gap: 6px; }
+.dl-card-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.12); }
+.dl-card-dot:first-child { background: #ff5f57; }
+.dl-card-dot:nth-child(2) { background: #febc2e; }
+.dl-card-dot:nth-child(3) { background: #28c840; }
+.dl-card-filename { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; color: var(--text-3); margin-left: auto; }
+
+.dl-card-body { padding: 28px 24px; }
+
+.file-tree { list-style: none; }
+.file-tree li {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--line-2);
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
+}
+.file-tree li:last-child { border-bottom: none; }
+.ft-icon { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; opacity: 0.5; }
+.ft-name { flex: 1; }
+.ft-name span { color: var(--text-4); }
+.ft-size { font-size: 10px; color: var(--text-4); letter-spacing: 0.12em; white-space: nowrap; }
+.ft-folder > .ft-name { color: var(--accent-2); font-weight: 500; }
+.ft-indent { padding-left: 20px; }
+
+.dl-card-footer {
+  padding: 16px 24px; border-top: 1px solid var(--line-2);
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(255,255,255,0.015);
+}
+.dl-card-footer-info { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-4); }
+.dl-card-footer-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(111,219,111,0.1); border: 1px solid rgba(111,219,111,0.2);
+  border-radius: 999px; padding: 4px 10px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #6fdb6f;
+}
+.dl-card-footer-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #6fdb6f; box-shadow: 0 0 6px #6fdb6f; }
+
+/* ═══ SECTIONS ═══ */
+.section-req, .section-changelog { padding: 100px 0; border-bottom: 1px solid var(--line); }
+.section-label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.3em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 48px;
+  display: flex; align-items: center; gap: 20px;
+}
+.section-label .num { font-family: var(--font-display); font-size: 20px; font-weight: 300; color: var(--text-4); }
+.section-label::after { content: ''; flex: 1; max-width: 60px; height: 1px; background: var(--line); }
+
+.req-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+}
+@media (max-width:700px) { .req-grid { grid-template-columns: 1fr; } }
+.req-item { background: var(--bg); padding: 32px 28px; transition: background 0.2s; }
+.req-item:hover { background: var(--bg-2); }
+.req-icon { width: 36px; height: 36px; margin-bottom: 20px; color: var(--accent); opacity: 0.8; }
+.req-name { font-family: var(--font-logo); font-weight: 700; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); margin-bottom: 6px; }
+.req-value { font-family: var(--font-display); font-size: 28px; font-weight: 300; color: var(--text); margin-bottom: 10px; }
+.req-note { font-size: 13px; color: var(--text-3); line-height: 1.5; }
+
+.changelog-list { list-style: none; }
+.changelog-item {
+  display: grid; grid-template-columns: 140px 1fr; gap: 32px; align-items: baseline;
+  padding: 28px 0; border-bottom: 1px solid var(--line-2);
+}
+.changelog-item:last-child { border-bottom: none; }
+@media (max-width:600px) { .changelog-item { grid-template-columns: 1fr; gap: 8px; } }
+.changelog-version { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.15em; color: var(--accent-2); display: flex; flex-direction: column; gap: 4px; }
+.changelog-date { font-size: 10px; color: var(--text-4); letter-spacing: 0.2em; }
+.changelog-changes { display: flex; flex-direction: column; gap: 8px; }
+.changelog-change { display: flex; gap: 10px; align-items: baseline; font-size: 14px; color: var(--text-2); }
+.changelog-tag {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 4px; flex-shrink: 0;
+  background: rgba(255,255,255,0.04); color: var(--text-4); border: 1px solid var(--line-2);
+}
+.changelog-tag.new { background: rgba(111,219,111,0.08); color: #6fdb6f; border-color: rgba(111,219,111,0.15); }
+
+/* ═══ CTA ═══ */
+.section-cta { padding: 140px var(--pad-x); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.cta-sup { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-4); margin-bottom: 28px; }
+.cta-title { font-family: var(--font-display); font-weight: 300; font-size: clamp(48px, 7vw, 96px); letter-spacing: -0.025em; line-height: 1.05; margin-bottom: 56px; }
+.cta-title em { font-style: italic; color: var(--text-3); }
+
+/* ═══ FOOTER ═══ */
+.vz-footer { border-top: 1px solid var(--line); padding: 60px var(--pad-x) 40px; max-width: var(--maxw); margin: 0 auto; }
+.vz-footer-big { font-family: var(--font-logo); font-weight: 900; font-size: clamp(48px, 8vw, 120px); letter-spacing: -0.04em; line-height: 1; color: rgba(255,255,255,0.04); margin-bottom: 32px; }
+.fz { background-image: repeating-linear-gradient(-55deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 2.5px, transparent 2.5px, transparent 7px); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,0.04); }
+.vz-footer-meta { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-4); }
+.vz-footer-meta .accent { color: var(--accent); }
+.vz-footer-meta .v { color: var(--text-3); }
+
+/* Progress */
+.dl-progress-wrap { display: none; flex-direction: column; gap: 12px; min-width: 220px; }
+.dl-progress-wrap.active { display: flex; }
+.dl-progress-bar-bg { width: 100%; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.dl-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 2px; transition: width 0.08s linear; }
+.dl-progress-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-3); }
+</style>
+</head>
+<body>
+
+<!-- INTRO -->
+<div id="intro">
+  <div class="intro-logo">VY<span class="iz">Z</span>ION</div>
+  <div class="intro-tagline">Reveal your stream.</div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand" style="text-decoration:none;cursor:pointer;">VY<span class="nz">Z</span>ION</a>
+  <div class="nav-time">
+    <div class="nav-time-dot"></div>
+    <span id="nav-time">--:--</span>
+  </div>
+</nav>
+
+<main>
+
+<!-- HERO -->
+<section class="dl-hero">
+  <div class="dl-eyebrow">Téléchargement</div>
+  <div class="dl-hero-grid">
+    <div>
+      <div class="reveal">
+        <h1 class="dl-title">Transit<br><em>Over</em><span class="accent-word">lay</span></h1>
+      </div>
+      <p class="dl-desc reveal">
+        Signalétique temps réel train et bus pour vos lives.
+        Multi-opérateurs, dashboard de contrôle, intégration Stream Deck.
+        Conçu pour les créateurs ferroviaires exigeants.
+      </p>
+      <div class="dl-meta reveal">
+        <div class="dl-meta-pill"><div class="dot"></div>v1.0.0</div>
+        <div class="dl-meta-pill"><div class="dot"></div>ZIP · 24.8 MB</div>
+        <div class="dl-meta-pill"><div class="dot"></div>Windows · macOS</div>
+        <div class="dl-meta-pill"><div class="dot"></div>OBS 30+</div>
+      </div>
+      <div class="dl-btn-wrap reveal">
+        <button class="dl-btn" id="dl-trigger" onclick="startDownload()">
+          <div class="dl-btn-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M10 3V13M10 13L6 9M10 13L14 9" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 16H17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          Télécharger
+        </button>
+        <div class="dl-progress-wrap" id="dl-progress">
+          <div class="dl-progress-bar-bg"><div class="dl-progress-bar" id="dl-bar"></div></div>
+          <div class="dl-progress-label" id="dl-label">Préparation…</div>
+        </div>
+        <div class="dl-size-note" id="dl-size-note">
+          <strong>transit-overlay-v1.0.0.zip</strong><br>24.8 MB
+        </div>
+      </div>
+    </div>
+
+    <!-- File card -->
+    <div class="reveal">
+      <div class="dl-card">
+        <div class="dl-card-header">
+          <div class="dl-card-dots">
+            <div class="dl-card-dot"></div>
+            <div class="dl-card-dot"></div>
+            <div class="dl-card-dot"></div>
+          </div>
+          <div class="dl-card-filename">transit-overlay-v1.0.0.zip</div>
+        </div>
+        <div class="dl-card-body">
+          <ul class="file-tree">
+            <li class="ft-folder">
+              <svg class="ft-icon" viewBox="0 0 14 14" fill="none"><path d="M1 3.5C1 2.67 1.67 2 2.5 2H5.5L7 3.5H11.5C12.33 3.5 13 4.17 13 5V10.5C13 11.33 12.33 12 11.5 12H2.5C1.67 12 1 11.33 1 10.5V3.5Z" stroke="#ffb84d" stroke-width="1.2"/></svg>
+              <span class="ft-name">transit-overlay/</span>
+            </li>
+            <li class="ft-indent">
+              <svg class="ft-icon" viewBox="0 0 14 14" fill="none"><path d="M3 2H9L11 4.5V12H3V2Z" stroke="currentColor" stroke-width="1.1"/><path d="M9 2V4.5H11" stroke="currentColor" stroke-width="1.1"/></svg>
+              <span class="ft-name">server.js <span>— Serveur Node &amp; WebSocket</span></span>
+              <span class="ft-size">18 KB</span>
+            </li>
+            <li class="ft-indent">
+              <svg class="ft-icon" viewBox="0 0 14 14" fill="none"><path d="M3 2H9L11 4.5V12H3V2Z" stroke="currentColor" stroke-width="1.1"/><path d="M9 2V4.5H11" stroke="currentColor" stroke-width="1.1"/></svg>
+              <span class="ft-name">dashboard.html <span>— Interface de contrôle</span></span>
+              <span class="ft-size">48 KB</span>
+            </li>
+            <li class="ft-indent">
+              <svg class="ft-icon" viewBox="0 0 14 14" fill="none"><path d="M3 2H9L11 4.5V12H3V2Z" stroke="currentColor" stroke-width="1.1"/><path d="M9 2V4.5H11" stroke="currentColor" stroke-width="1.1"/></svg>
+              <span class="ft-name">overlay.html <span>— Source OBS Browser</span></span>
+              <span class="ft-size">36 KB</span>
+            </li>
+            <li class="ft-indent">
+              <svg class="ft-icon" viewBox="0 0 14 14" fill="none"><path d="M3 2H9L11 4.5V12H3V2Z" stroke="currentColor" stroke-width="1.1"/><path d="M9 2V4.5H11" stroke="currentColor" stroke-width="1.1"/></svg>
+              <span class="ft-name">README.md <span>— Guide d'installation</span></span>
+              <span class="ft-size">12 KB</span>
+            </li>
+          </ul>
+        </div>
+        <div class="dl-card-footer">
+          <div class="dl-card-footer-info">SHA-256 · a3f9c12e…</div>
+          <div class="dl-card-footer-badge">Vérifié</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ═══ INTRO VYZION dès le chargement ═══
+const intro = document.getElementById('intro');
+document.body.style.overflow = 'hidden';
+
+function playIntro() {
+  if (!intro) return;
+  intro.classList.add('show');
+  setTimeout(() => {
+    intro.classList.add('exit');
+    setTimeout(() => {
+      intro.classList.remove('show');
+      document.body.style.overflow = '';
+    }, 520);
+  }, 750);
+}
+playIntro();
+
+// ESC pour skip
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && intro && !intro.classList.contains('exit')) {
+    intro.classList.add('exit');
+    setTimeout(() => {
+      intro.classList.remove('show');
+      document.body.style.overflow = '';
+    }, 520);
+  }
+});
+
+// ═══ CLOCK ═══
+function tick() {
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  const el = document.getElementById('nav-time');
+  if (el) el.textContent = `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+setInterval(tick, 1000); tick();
+
+// ═══ REVEAL ═══
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
+}, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+
+// ═══ DOWNLOAD ═══
+function startDownload() {
+  const btn = document.getElementById('dl-trigger');
+  const pw  = document.getElementById('dl-progress');
+  const bar = document.getElementById('dl-bar');
+  const lbl = document.getElementById('dl-label');
+  const sn  = document.getElementById('dl-size-note');
+  if (btn) btn.style.display = 'none';
+  if (sn)  sn.style.display  = 'none';
+  if (pw)  pw.classList.add('active');
+  let pct = 0;
+  const iv = setInterval(() => {
+    pct = Math.min(100, pct + Math.random() * 4 + 1);
+    if (bar) bar.style.width = pct + '%';
+    if (lbl) {
+      if      (pct < 35)  lbl.textContent = 'Connexion…';
+      else if (pct < 95)  lbl.textContent = 'Package… ' + Math.round(pct) + '%';
+      else                lbl.textContent = 'Terminé ✓';
+    }
+    if (pct >= 100) {
+      clearInterval(iv);
+      // Déclenche le téléchargement du fichier ZIP
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = 'transit-overlay-v1.0.0.zip';
+        a.download = 'transit-overlay-v1.0.0.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, 400);
+    }
+  }, 60);
+}
+</script>
+</body>
+</html>

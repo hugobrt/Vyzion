@@ -200,6 +200,21 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 
 body.intro-playing { overflow: hidden; }
+
+/* Page transition slide */
+#page-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  pointer-events: none;
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 0.7s cubic-bezier(.76,0,.24,1);
+}
+#page-fade.active {
+  clip-path: inset(0 0 0 0);
+  pointer-events: auto;
+}
 body.intro-done .hero-section > * { animation: heroIn .85s cubic-bezier(.3,.2,.2,1) both; }
 body.intro-done .hero-section > *:nth-child(1) { animation-delay: .1s; }
 body.intro-done .hero-section > *:nth-child(2) { animation-delay: .25s; }
@@ -1980,6 +1995,9 @@ h2 em {
 }
 </style>
 </head>
+<body>
+
+<div id="page-fade"></div>
 
 <!-- ═══════════════════ PRELOADER ═══════════════════ -->
 <div id="preloader">
@@ -2513,7 +2531,7 @@ h2 em {
         transit-overlay
         <span class="pkg">v1.2.0</span>
       </div>
-      <a href="#" class="dl-btn" onclick="return downloadBundle(event)">
+      <a href="download.html" class="dl-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3v14m0 0l-5-5m5 5l5-5M5 21h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Télécharger le ZIP
       </a>
@@ -2699,6 +2717,19 @@ function tickNavClock() {
 }
 setInterval(tickNavClock, 1000);
 tickNavClock();
+
+// ═══ Page transition slide noir ═══
+document.querySelectorAll('a.dl-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    const href = btn.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('http')) return;
+    e.preventDefault();
+    const fade = document.getElementById('page-fade');
+    if (!fade) { window.location.href = href; return; }
+    fade.classList.add('active');
+    setTimeout(() => { window.location.href = href; }, 700);
+  });
+});
 
 // ══════════════════════════════════════════════════════════
 //  SIMULATION — états et données
